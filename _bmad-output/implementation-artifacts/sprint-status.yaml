@@ -1,0 +1,12 @@
+generated: 2026-08-01 00:00
+last_updated: 2026-08-01 00:00
+project: private-prediction-market
+project_key: PPM
+tracking_system: file-system
+story_location: "{story_location}"
+development_status:
+  epic-1: backlog
+  1-1-initial-setup: done
+  1-2-first-story: backlog
+  epic-1-retrospective: optional
+action_items: []
