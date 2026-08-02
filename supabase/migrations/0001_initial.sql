@@ -1,0 +1,1 @@
+-- Initial schema placeholder for private spaces, memberships, markets, bets, and standings.

@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@ppm/config": ["packages/config/src/index.ts"],
+      "@ppm/types": ["packages/types/src/index.ts"],
+      "@ppm/ui": ["packages/ui/src/index.ts"]
+    }
+  }
+}

@@ -1,0 +1,1 @@
+export const workspaceName = 'private-prediction-market';
