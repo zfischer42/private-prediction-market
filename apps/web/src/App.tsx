@@ -1,3 +1,5 @@
+import { signInWithGoogle } from './lib/supabase';
+
 export default function App() {
   return (
     <main className="app-shell">
@@ -8,6 +10,7 @@ export default function App() {
           This starter shell is the first step toward the private market, invite,
           bet, and resolve loop defined in the architecture spine.
         </p>
+        <button onClick={() => signInWithGoogle()}>Sign in with Google</button>
       </section>
     </main>
   );
