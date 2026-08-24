@@ -140,7 +140,7 @@ Four separate fields, each with one job:
 | `opens_at` | Betting starts |
 | `closes_at` | Betting ends |
 | `event_start_at` | The thing happens |
-| `event_end_at` | The thing is over and knowable — gates `propose_resolution` |
+| `event_end_at` | The thing is over and knowable — gates `propose_resolution`. Must be **at or after `closes_at`**: an event that ends while betting is live lets the quarantine line be drawn mid-market |
 | `options_lock_at` | Derived: `closes_at - 15 min` for `open` markets |
 
 `status` progresses `scheduled → open → closed → resolved | voided`. It is
@@ -217,8 +217,8 @@ refuses to push a balance below zero, and ledgers every change with `actor_id`.
 
 | Function | Params | Returns | Errors |
 |---|---|---|---|
-| `create_market` | `_circle_id, _question, _kind, _closes_at` + optional `_options text[]`, `_line numeric`, `_subject_id uuid`, `_opens_at`, `_event_start_at`, `_event_end_at`, `_image_url` | `bigint` market id | Not a member of this circle · Betting must close after it opens · The tagged person is not in this circle · Over/under needs a line · Use a half number for the line… · Multiple choice needs at least 2 options · Unknown market kind · Duplicate option: "x"… |
-| `update_market` | `_market_id` + optional `_question`, `_image_url`, `_closes_at`, `_opens_at`, `_event_start_at`, `_event_end_at`, `_subject_id` | void | Market not found · That market has already settled · Only the market creator or a circle admin can edit this · Bets have been placed. Only the image can be changed now… · Bets have been placed. Only a circle admin can change the event timing now. |
+| `create_market` | `_circle_id, _question, _kind, _closes_at` + optional `_options text[]`, `_line numeric`, `_subject_id uuid`, `_opens_at`, `_event_start_at`, `_event_end_at`, `_image_url` | `bigint` market id | Not a member of this circle · Betting must close after it opens · The event cannot end before betting closes · The event cannot start after it ends · The tagged person is not in this circle · Over/under needs a line · Use a half number for the line… · Multiple choice needs at least 2 options · Unknown market kind · Duplicate option: "x"… |
+| `update_market` | `_market_id` + optional `_question`, `_image_url`, `_closes_at`, `_opens_at`, `_event_start_at`, `_event_end_at`, `_subject_id` | void | Market not found · That market has already settled · Only the market creator or a circle admin can edit this · Bets have been placed. Only the image can be changed now… · Bets have been placed. Only a circle admin can change the event timing now. · The event cannot end before betting closes · The event cannot start after it ends |
 | `cancel_market` | `_market_id bigint` | void | Market not found · That market has already settled and cannot be cancelled · Only the market creator or a circle admin can cancel this · Bets have been placed. Use void_market() to refund everyone instead. |
 | `submit_option` | `_market_id bigint, _label text` | `bigint` option id | This market has fixed options · This market has settled · Option submissions have closed · This market has not opened yet · Betting has closed · Not a member · That option already exists |
 
@@ -262,7 +262,7 @@ for the admin to look at. They bind nothing.
 | Action | Effect |
 |---|---|
 | `approve` | Pays out immediately. Bond refunded. |
-| `reject_reopen` | False alarm — betting continues, bond forfeited. |
+| `reject_reopen` | False alarm — betting continues, bond forfeited. Clears the quarantine line, so bets placed from here on are normal bets. |
 | `reject_close` | Betting stops, market stays unresolved. |
 | `void_market` | Everyone refunded, all bonds returned. |
 
@@ -321,6 +321,15 @@ Policies parse the path to check circle membership, so **paths must follow this
 shape** or the upload is denied. Uploads and deletes are blocked once the market
 settles, which keeps the proof behind a payout intact.
 
+The two segments must also **agree**: `evidence_read` and `evidence_upload`
+assert that segment 1 is the circle that actually owns segment 2's market. The
+client supplies that circle id, so without the check a member could file
+evidence under a different circle of theirs — leaving the market's own circle
+with a broken image and handing the photo to people with no stake in the bet.
+It is the same integrity rule the composite foreign keys in §13.7 enforce for
+`bets`, `resolution_proposals` and `market_evidence`; storage needs it spelled
+out because the reference lives in a text path rather than a column.
+
 ---
 
 ## 6. Design decisions
@@ -359,8 +368,19 @@ still pays a tax to the honest players.
 
 This only bites when a proposal is actually approved — a griefer's false alarm
 gets rejected and every late bet reverts to being a normal bet.
-`review_started_at` is never cleared, because the earliest proposal after the
-event ended is the permanent quarantine line.
+
+`reject_reopen` is what performs that reversion: it clears `review_started_at`
+and resets `was_late`. It only does so once **no pending proposal is left** on
+the market — with another proposal still live, later bets genuinely are
+snipe-suspect and the line stays put.
+
+Nothing else clears it. `reject_close` keeps the line (betting is over anyway),
+and `resolve_market` keeps it as the audit record of why a refund happened.
+
+> Until v5 the line was never cleared at all, which made `reject_reopen` a trap:
+> it reopened betting and then voided every bet it invited that turned out to be
+> right. The doc above described the intended behaviour; the code did not
+> implement it.
 
 ### Settlement is irreversible
 

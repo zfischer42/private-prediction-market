@@ -1,0 +1,15 @@
+{
+  "name": "@ppm/sandbox",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "python3 check-params.py && node build.mjs && node check-types.mjs && node run.mjs",
+    "test:params": "python3 check-params.py",
+    "test:types": "node check-types.mjs",
+    "test:run": "node build.mjs && node run.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.7",
+    "esbuild": "^0.25.0"
+  }
+}

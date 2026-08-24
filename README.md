@@ -1,5 +1,13 @@
 Project by Zach Fisher and York Li
 
+A private, invite-only prediction market for friend groups.
+
+Docs:
+[frontend API reference](apps/web/docs/api-reference.md) ·
+[frontend quickstart](apps/web/src/lib/README.md) ·
+[backend reference](supabase/BACKEND.md) ·
+[test harness](sandbox/README.md)
+
 ## Spin up API and Client
 From root repo
 ``` bash

@@ -1,9 +1,30 @@
 -- =====================================================================
--- PRIVATE PREDICTION MARKET - FULL SCHEMA  v4
+-- PRIVATE PREDICTION MARKET - FULL SCHEMA  v5
 -- Postgres / Supabase
 --
 -- Run top to bottom in the Supabase SQL Editor. Copy-paste ready.
 -- Look for "SELF-TEST PASSED" in the output; it raises loudly on failure.
+--
+-- v5 closes four ways a market could take someone's coins and give nothing
+-- back, or refuse an action with a nonsense error:
+--
+--   1. event_end_at was never validated against closes_at, so a market could
+--      be created already "over". The first proposal then drew the quarantine
+--      line before betting opened, every bet on the winning side was voided at
+--      resolution, the winning pool emptied to 0, and the whole pot was
+--      refunded. Unwinnable from birth, silently. Now checked in create_market
+--      AND update_market - the second was an equally open door.
+--   2. reject_close ran least(closes_at, now()) on markets that had not opened
+--      yet, pushing closes_at under opens_at and tripping valid_betting_window.
+--      The action was unusable and the admin was told "Betting must close after
+--      it opens" about a form they never touched.
+--   3. reject_reopen reopened betting but kept the quarantine line, so every
+--      bet it invited was refunded rather than paid if it happened to be right.
+--      The line is now cleared, which is what BACKEND.md always documented.
+--   4. The evidence storage policies read the circle and the market from
+--      different path segments and never checked they agreed, and the client
+--      supplies that circle id. Evidence could land where the market's own
+--      circle could not read it, and where an unrelated circle could.
 --
 -- v4 fixes options_lock_at desyncing when update_market moves the betting
 -- window, clears orphaned notifications in cancel_market, and adds a hard
@@ -1236,6 +1257,25 @@ begin
   if _closes_at <= _opens then
     raise exception 'Betting must close after it opens';
   end if;
+
+  -- v5: the event cannot be over before betting stops.
+  --
+  -- event_end_at is the gate propose_resolution() reads. Nothing validated it,
+  -- so a value at or before closes_at let the quarantine line
+  -- (markets.review_started_at) be drawn while betting was still live -- and a
+  -- PAST value let it be drawn before betting even OPENED. resolve_market()
+  -- voids every bet placed after that line on the winning side, so the winning
+  -- pool emptied to 0 and the market fell into the "nobody was right" branch:
+  -- the whole pot refunded, no winner, no error, no way to tell from the app
+  -- that the market was unwinnable from the moment it was created.
+  if _event_end_at is not null and _event_end_at < _closes_at then
+    raise exception 'The event cannot end before betting closes';
+  end if;
+  if _event_start_at is not null and _event_end_at is not null
+     and _event_start_at > _event_end_at then
+    raise exception 'The event cannot start after it ends';
+  end if;
+
   if _subject_id is not null and not exists (
        select 1 from public.circle_members
        where circle_id = _circle_id and user_id = _subject_id) then
@@ -1323,9 +1363,10 @@ create or replace function public.update_market(
 )
 returns void language plpgsql security definer set search_path = '' as $$
 declare _circle_id bigint; _creator uuid; _status text; _has_bets boolean;
+        _closes timestamptz; _ev_start timestamptz; _ev_end timestamptz;
 begin
-  select circle_id, creator_id, status
-  into _circle_id, _creator, _status
+  select circle_id, creator_id, status, closes_at, event_start_at, event_end_at
+  into _circle_id, _creator, _status, _closes, _ev_start, _ev_end
   from public.markets where id = _market_id for update;
 
   if _circle_id is null then raise exception 'Market not found'; end if;
@@ -1340,6 +1381,10 @@ begin
                  where market_id = _market_id and voided_at is null)
   into _has_bets;
 
+  -- The frozen-field guards run BEFORE the v5 ordering check below. They have
+  -- to: "you cannot move closes_at once bets exist" is the more specific and
+  -- more useful complaint, and letting the ordering check speak first answered
+  -- a question about event timing that the caller had not asked.
   if _has_bets then
     if _question is not null or _closes_at is not null or _opens_at is not null
        or _subject_id is not null then
@@ -1357,7 +1402,32 @@ begin
        and not public.is_circle_admin(_circle_id) then
       raise exception 'Bets have been placed. Only a circle admin can change the event timing now.';
     end if;
+  end if;
 
+  -- v5: same ordering rule as create_market, evaluated against the values this
+  -- call will actually leave behind. update_market was a second door into the
+  -- unwinnable-market bug that the create_market check closes, and an admin can
+  -- move event_end_at even after bets exist, so it is checked on both paths.
+  --
+  -- Only when the caller is actually TOUCHING one of these three fields. A row
+  -- can already hold an inconsistent pair -- created before v5, or left that
+  -- way by reject_close collapsing the betting window -- and validating stored
+  -- state on every call would make such a market permanently uneditable,
+  -- including the image edit that has nothing to do with timing. Judge the
+  -- caller's change, not the history they inherited.
+  if _closes_at is not null or _event_end_at is not null or _event_start_at is not null then
+    if coalesce(_event_end_at, _ev_end) is not null
+       and coalesce(_event_end_at, _ev_end) < coalesce(_closes_at, _closes) then
+      raise exception 'The event cannot end before betting closes';
+    end if;
+    if coalesce(_event_start_at, _ev_start) is not null
+       and coalesce(_event_end_at, _ev_end) is not null
+       and coalesce(_event_start_at, _ev_start) > coalesce(_event_end_at, _ev_end) then
+      raise exception 'The event cannot start after it ends';
+    end if;
+  end if;
+
+  if _has_bets then
     update public.markets
     set image_url     = coalesce(_image_url, image_url),
         event_end_at  = coalesce(_event_end_at, event_end_at),
@@ -1783,8 +1853,30 @@ begin
   elsif _action = 'reject_close' then
     -- situational, time-sensitive bet: stop betting, stay unresolved.
     -- Quarantine line is KEPT: any later bet is still snipe-suspect.
+    --
+    -- v5: pull BOTH ends of the window into the past, not just closes_at.
+    --
+    -- least(closes_at, now()) alone assumed now() was already past opens_at,
+    -- which is false for a market that has not opened yet -- and one CAN reach
+    -- review, because propose_resolution() accepts status 'scheduled'. Pulling
+    -- closes_at below opens_at violated valid_betting_window, so the whole
+    -- review aborted and the admin was shown "Betting must close after it
+    -- opens." about a form they never filled in. reject_close was simply
+    -- unavailable on those markets.
+    --
+    -- Flooring closes_at at opens_at instead would satisfy the constraint but
+    -- leave a CLOSED market whose window is still in the future, and status is
+    -- derived from those timestamps elsewhere: update_market() recomputes it
+    -- from closes_at/opens_at, so the next unrelated edit -- changing the image
+    -- -- would compute 'scheduled' and hand the market back to the lifecycle
+    -- cron, which would reopen betting on a market an admin had deliberately
+    -- shut. Moving both ends into the past keeps every derivation agreeing on
+    -- 'closed'. Unqualified column refs on the right-hand side are the OLD
+    -- values, so closes_at is compared against the pre-update opens_at; the
+    -- constraint holds either way, because opens_at only ever moves earlier.
     update public.markets
     set status    = 'closed',
+        opens_at  = least(opens_at,  now() - interval '1 second'),
         closes_at = least(closes_at, now())
     where id = _market_id;
 
@@ -1796,10 +1888,32 @@ begin
     if _closes > now() then
       update public.markets set status = 'open' where id = _market_id;
     end if;
-    -- review_started_at is deliberately NOT cleared. The earliest proposal
-    -- after the event ended is the PERMANENT quarantine line; clearing it
-    -- would let bets from this window be re-classified as "early" when a
-    -- later proposal drops a newer line, letting snipers steal the pot.
+
+    -- v5: the quarantine line is now CLEARED here, which is what BACKEND.md
+    -- always claimed ("a griefer's false alarm gets rejected and every late bet
+    -- reverts to being a normal bet") and what the code did not do.
+    --
+    -- Keeping it made this branch a trap. reject_reopen exists to invite more
+    -- betting, but resolve_market() voids every bet placed after the line on
+    -- the winning side -- so anyone who accepted the invitation and happened to
+    -- be right got a refund instead of a payout, silently, while whoever bet
+    -- before the false alarm collected their stake. The app said betting was
+    -- open; the bet could not win.
+    --
+    -- The v2 comment's worry was a LATER proposal dropping a newer line and
+    -- letting bets from this window re-classify as "early". That is real, so
+    -- the line is only cleared once no pending proposal is left on the market:
+    -- with another proposal still live, bets genuinely are snipe-suspect and
+    -- the line stays. was_late is reset with it, or the flag outlives the
+    -- timestamp that gave it meaning and the UI reports a lie.
+    if not exists (
+      select 1 from public.resolution_proposals
+      where market_id = _market_id and status = 'pending'
+    ) then
+      update public.markets set review_started_at = null where id = _market_id;
+      update public.bets set was_late = false
+      where market_id = _market_id and voided_at is null and was_late;
+    end if;
   end if;
 end;
 $$;
@@ -2289,12 +2403,28 @@ $$;
 grant execute on function public.evidence_circle_id(text) to authenticated;
 grant execute on function public.evidence_market_id(text) to authenticated;
 
+-- v5: the two path segments must agree.
+--
+-- These policies read segment 1 as the circle and segment 2 as the market and
+-- never checked that the two belong together. The client builds segment 1 from
+-- a caller-supplied circleId (uploadEvidence's opts.circleId), so the mismatch
+-- was client-controlled: upload to `<other circle you are in>/<this market>/…`
+-- and the market_evidence row stays visible to the market's circle (its own
+-- policy validates market_id) while the FILE is readable only by the unrelated
+-- circle. Broken images for the people the evidence is for, and the photo
+-- handed to a circle that has nothing to do with the bet.
+--
+-- Same class of hole the composite foreign keys in section 13.7 close for
+-- bets/proposals/evidence. This is the one reference that lives in a text path
+-- instead of a column, so it needs the check spelled out rather than a FK.
 drop policy if exists evidence_read on storage.objects;
 create policy evidence_read on storage.objects
   for select to authenticated
   using (
     bucket_id = 'evidence'
     and public.is_circle_member(public.evidence_circle_id(name))
+    and public.evidence_circle_id(name)
+        = public.market_circle(public.evidence_market_id(name))
   );
 
 drop policy if exists evidence_upload on storage.objects;
@@ -2303,6 +2433,8 @@ create policy evidence_upload on storage.objects
   with check (
     bucket_id = 'evidence'
     and public.is_circle_member(public.evidence_circle_id(name))
+    and public.evidence_circle_id(name)
+        = public.market_circle(public.evidence_market_id(name))
     and not public.market_is_settled(public.evidence_market_id(name))
   );
 

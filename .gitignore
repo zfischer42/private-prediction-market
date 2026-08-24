@@ -25,3 +25,5 @@ coverage/
 
 # Logs
 *.log
+# Sandbox build output
+sandbox/lib/
