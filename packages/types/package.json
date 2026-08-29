@@ -2,7 +2,11 @@
   "name": "@ppm/types",
   "private": true,
   "type": "module",
+  "types": "./src/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.d.ts"
+    }
   }
 }
