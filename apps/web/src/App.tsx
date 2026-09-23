@@ -1,244 +1,199 @@
-import { useEffect, useState } from 'react';
-import {
-  getBackendHealth,
-  getCircles,
-  getMarketBets,
-  getMarketComments,
-  getMarketOdds,
-  getMarketOptions,
-  getMarketProposals,
-  getMarkets,
-  getNotifications,
-} from './api/backend';
+import { useEffect, useState, type ReactNode } from 'react';
+import { getNotifications, signOut } from './lib';
+import { MeContext, useAuthUser } from './hooks';
+import { Link, match, navigate, takeReturnTo, toId, usePath } from './router';
+import { Loading, ToastProvider, useToast } from './ui';
+import SignIn from './screens/SignIn';
+import Circles from './screens/Circles';
+import CircleScreen from './screens/Circle';
+import NewMarket from './screens/NewMarket';
+import MarketScreen from './screens/Market';
+import Notifications from './screens/Notifications';
 
 export default function App() {
-  const [backendStatus, setBackendStatus] = useState('Checking backend...');
-  const [markets, setMarkets] = useState<Awaited<ReturnType<typeof getMarkets>>['markets']>([]);
-  const [circles, setCircles] = useState<Awaited<ReturnType<typeof getCircles>>['circles']>([]);
-  const [bets, setBets] = useState<Awaited<ReturnType<typeof getMarketBets>>['bets']>([]);
-  const [proposals, setProposals] = useState<Awaited<ReturnType<typeof getMarketProposals>>['proposals']>([]);
-  const [comments, setComments] = useState<Awaited<ReturnType<typeof getMarketComments>>['comments']>([]);
-  const [options, setOptions] = useState<Awaited<ReturnType<typeof getMarketOptions>>['options']>([]);
-  const [odds, setOdds] = useState<Awaited<ReturnType<typeof getMarketOdds>>['odds']>([]);
-  const [notifications, setNotifications] = useState<Awaited<ReturnType<typeof getNotifications>>['notifications']>([]);
+  return (
+    <ToastProvider>
+      <Gate />
+    </ToastProvider>
+  );
+}
 
+function Gate() {
+  const user = useAuthUser();
+
+  // Back from Google: pick up where the person was headed.
   useEffect(() => {
-    let active = true;
+    if (!user) return;
+    const to = takeReturnTo();
+    if (to) navigate(to, { replace: true });
+  }, [user?.id]);
 
-    getBackendHealth()
-      .then(({ status }) => {
-        if (active) {
-          setBackendStatus(status === 'ok' ? 'Backend connected' : 'Backend unavailable');
-        }
-      })
-      .catch(() => {
-        if (active) setBackendStatus('Backend unavailable');
-      });
+  if (user === undefined) {
+    return (
+      <div className="splash">
+        <Loading />
+      </div>
+    );
+  }
+  if (user === null) {
+    return (
+      <>
+        <InstallHint />
+        <SignIn />
+      </>
+    );
+  }
 
-    getMarkets()
-      .then(({ markets: nextMarkets }) => {
-        if (active) setMarkets(nextMarkets);
-      })
-      .catch(() => {
-        if (active) setMarkets([]);
-      });
+  // Keyed by user so a change of identity can never leave the previous person's data on screen.
+  return (
+    <MeContext.Provider key={user.id} value={user}>
+      <InstallHint />
+      <Shell>
+        <Routes />
+      </Shell>
+    </MeContext.Provider>
+  );
+}
 
-    getCircles()
-      .then(({ circles: nextCircles }) => {
-        if (active) setCircles(nextCircles);
-      })
-      .catch(() => {
-        if (active) setCircles([]);
-      });
+function Routes() {
+  const path = usePath();
 
-    getMarketBets('mkt-1')
-      .then(({ bets: nextBets }) => {
-        if (active) setBets(nextBets);
-      })
-      .catch(() => {
-        if (active) setBets([]);
-      });
+  if (match('/', path)) return <Circles />;
 
-    getMarketProposals('mkt-1')
-      .then(({ proposals: nextProposals }) => {
-        if (active) setProposals(nextProposals);
-      })
-      .catch(() => {
-        if (active) setProposals([]);
-      });
+  const circle = match('/circle/:id', path);
+  const circleId = toId(circle?.id);
+  if (circleId) return <CircleScreen key={circleId} circleId={circleId} />;
 
-    getMarketComments('mkt-1')
-      .then(({ comments: nextComments }) => {
-        if (active) setComments(nextComments);
-      })
-      .catch(() => {
-        if (active) setComments([]);
-      });
+  const newMarket = match('/circle/:id/new-market', path);
+  const newMarketCircleId = toId(newMarket?.id);
+  if (newMarketCircleId) return <NewMarket key={newMarketCircleId} circleId={newMarketCircleId} />;
 
-    getMarketOptions('mkt-1')
-      .then(({ options: nextOptions }) => {
-        if (active) setOptions(nextOptions);
-      })
-      .catch(() => {
-        if (active) setOptions([]);
-      });
+  const market = match('/market/:id', path);
+  const marketId = toId(market?.id);
+  if (marketId) return <MarketScreen key={marketId} marketId={marketId} />;
 
-    getMarketOdds('mkt-1')
-      .then(({ odds: nextOdds }) => {
-        if (active) setOdds(nextOdds);
-      })
-      .catch(() => {
-        if (active) setOdds([]);
-      });
-
-    getNotifications()
-      .then(({ notifications: nextNotifications }) => {
-        if (active) setNotifications(nextNotifications);
-      })
-      .catch(() => {
-        if (active) setNotifications([]);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
+  if (match('/notifications', path)) return <Notifications />;
 
   return (
-    <main className="app-shell">
-      <section className="hero">
-        <p className="eyebrow">Private Prediction Market</p>
-        <h1>Invite-only bets for friends, built for mobile first.</h1>
-        <p className="lede">
-          This starter shell is the first step toward the private market, invite,
-          bet, and resolve loop defined in the architecture spine.
+    <div className="stack">
+      <h1>Page not found</h1>
+      <Link to="/" className="btn">
+        Back to your circles
+      </Link>
+    </div>
+  );
+}
+
+const INSTALL_HINT_SEEN_KEY = 'ppm_install_hint_seen';
+
+// Shown once, the first time this browser opens the app, on whichever screen
+// that happens to be (sign-in or straight into a circle). There is no
+// beforeinstallprompt on iOS Safari - the only "install" that exists there is
+// Share -> Add to Home Screen, and nothing tells a person that unless the
+// page does. Once dismissed, or once already running installed, it is gone
+// for good - localStorage remembers per browser, not per account.
+function InstallHint() {
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(INSTALL_HINT_SEEN_KEY) === '1';
+    } catch {
+      return true; // can't remember the dismissal, so don't risk nagging every load
+    }
+  });
+
+  const standalone =
+    typeof window !== 'undefined' &&
+    (window.matchMedia?.('(display-mode: standalone)').matches ||
+      // Older iOS Safari's own flag - there is no display-mode media query there.
+      (window.navigator as { standalone?: boolean }).standalone === true);
+
+  if (dismissed || standalone) return null;
+
+  const isIOS = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  function dismiss() {
+    try {
+      localStorage.setItem(INSTALL_HINT_SEEN_KEY, '1');
+    } catch {
+      // No storage (private mode, etc.) - it just asks again next time.
+    }
+    setDismissed(true);
+  }
+
+  return (
+    <div
+      style={{
+        padding: '0.75rem max(1rem, env(safe-area-inset-right)) 0 max(1rem, env(safe-area-inset-left))',
+        paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+      }}
+    >
+      <div className="note" style={{ maxWidth: '42rem', margin: '0 auto' }}>
+        <p className="small" style={{ margin: 0 }}>
+          {isIOS ? (
+            <>
+              Add this to your home screen: tap <strong>Share</strong>, then{' '}
+              <strong>Add to Home Screen</strong>.
+            </>
+          ) : (
+            <>
+              Add this to your home screen from your browser's menu - it opens full-screen next
+              time, just like an app.
+            </>
+          )}
         </p>
-        <p className="status">{backendStatus}</p>
-      </section>
+        <button type="button" className="btn small ghost" onClick={dismiss}>
+          Got it
+        </button>
+      </div>
+    </div>
+  );
+}
 
-      <section className="circle-list">
-        <h2>Your circles</h2>
-        {circles.length === 0 ? (
-          <p>No circles available yet.</p>
-        ) : (
-          circles.map((circle) => (
-            <article key={circle.id} className="market-card">
-              <h3>{circle.name}</h3>
-              <p>{circle.memberCount} members</p>
-              <p>{circle.season}</p>
-            </article>
-          ))
-        )}
-      </section>
+function Shell({ children }: { children: ReactNode }) {
+  const toast = useToast();
+  const path = usePath();
+  const [unread, setUnread] = useState(0);
 
-      <section className="market-list">
-        <h2>Open markets</h2>
-        {markets.length === 0 ? (
-          <p>No markets available yet.</p>
-        ) : (
-          markets.map((market) => (
-            <article key={market.id} className="market-card">
-              <h3>{market.question}</h3>
-              <p>Status: {market.status}</p>
-              <ul>
-                {market.options.map((option) => (
-                  <li key={option.id}>
-                    {option.label}: {option.odds}
-                  </li>
-                ))}
-              </ul>
-            </article>
-          ))
-        )}
-      </section>
+  // Notifications are not published to realtime, so refresh the badge as the person moves around.
+  useEffect(() => {
+    let live = true;
+    void getNotifications({ unreadOnly: true, limit: 99 }).then((res) => {
+      if (live && res.error === undefined) setUnread(res.data.length);
+    });
+    return () => {
+      live = false;
+    };
+  }, [path]);
 
-      <section className="market-list">
-        <h2>Market bets</h2>
-        {bets.length === 0 ? (
-          <p>No bets placed yet.</p>
-        ) : (
-          bets.map((bet) => (
-            <article key={bet.id} className="market-card">
-              <h3>{bet.optionLabel}</h3>
-              <p>Amount: {bet.amount}</p>
-              <p>Status: {bet.status}</p>
-            </article>
-          ))
-        )}
-      </section>
+  async function onSignOut() {
+    const res = await signOut();
+    if (res.error !== undefined) toast(res.error, 'error');
+    else navigate('/', { replace: true });
+  }
 
-      <section className="market-list">
-        <h2>Market options</h2>
-        {options.length === 0 ? (
-          <p>No options available yet.</p>
-        ) : (
-          options.map((option) => (
-            <article key={option.id} className="market-card">
-              <h3>{option.label}</h3>
-              <p>Sort order: {option.sortOrder}</p>
-            </article>
-          ))
-        )}
-      </section>
-
-      <section className="market-list">
-        <h2>Market odds</h2>
-        {odds.length === 0 ? (
-          <p>No odds available yet.</p>
-        ) : (
-          odds.map((entry) => (
-            <article key={entry.optionId} className="market-card">
-              <h3>{entry.label}</h3>
-              <p>Pool: {entry.pool}</p>
-              <p>Pct: {entry.pct ?? 'n/a'}</p>
-            </article>
-          ))
-        )}
-      </section>
-
-      <section className="market-list">
-        <h2>Resolution proposals</h2>
-        {proposals.length === 0 ? (
-          <p>No proposals yet.</p>
-        ) : (
-          proposals.map((proposal) => (
-            <article key={proposal.id} className="market-card">
-              <h3>{proposal.proposer}: {proposal.proposedOptionLabel}</h3>
-              <p>Status: {proposal.status}</p>
-              {proposal.note ? <p>{proposal.note}</p> : null}
-            </article>
-          ))
-        )}
-      </section>
-
-      <section className="market-list">
-        <h2>Comments</h2>
-        {comments.length === 0 ? (
-          <p>No comments yet.</p>
-        ) : (
-          comments.map((comment) => (
-            <article key={comment.id} className="market-card">
-              <h3>{comment.user}</h3>
-              <p>{comment.body}</p>
-            </article>
-          ))
-        )}
-      </section>
-
-      <section className="market-list">
-        <h2>Notifications</h2>
-        {notifications.length === 0 ? (
-          <p>No notifications yet.</p>
-        ) : (
-          notifications.map((notification) => (
-            <article key={notification.id} className="market-card">
-              <h3>{notification.title}</h3>
-              <p>{notification.body}</p>
-              <p>{notification.unread ? 'Unread' : 'Read'}</p>
-            </article>
-          ))
-        )}
-      </section>
-    </main>
+  return (
+    <>
+      <header className="topbar">
+        <div className="topbar-inner">
+          <Link to="/" className="brand">
+            Private Market
+          </Link>
+          <nav className="row">
+            <Link
+              to="/notifications"
+              className="btn small ghost"
+              aria-label={unread > 0 ? `Alerts, ${unread} unread` : 'Alerts'}
+            >
+              Alerts
+              {unread > 0 && <span className="badge">{unread}</span>}
+            </Link>
+            <button type="button" className="btn small ghost" onClick={onSignOut}>
+              Sign out
+            </button>
+          </nav>
+        </div>
+      </header>
+      <main className="container">{children}</main>
+    </>
   );
 }

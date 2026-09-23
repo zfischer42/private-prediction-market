@@ -589,7 +589,7 @@ double-tapping cannot spend the same coins twice.
 **Errors** — `Amount must be positive` · `This market has already settled` ·
 `Betting has closed` · `Betting has not opened yet` · `Not a member of this circle` ·
 `You cannot bet on a market about yourself` ·
-`That option does not belong to this market` · `Not enough coins`
+`That option does not belong to this market` · `Not enough dollars`
 
 ### `getMarketBets(marketId)`
 
@@ -680,7 +680,7 @@ parameter. One pending proposal per person per market.
 
 **Errors** — `This market is already settled` · `Not a member` ·
 `The event has not finished yet` · `That option does not belong to this market` ·
-`Not enough coins to post the bond`
+`Not enough dollars to post the bond`
 
 ### `getProposals(marketId, opts?)`
 
@@ -785,18 +785,21 @@ voidMarket(marketId: number, reason: string): Promise<Result<null>>
 
 ## Comments
 
-### `getComments(marketId)`
+One running chat per circle - not attached to any one market (v9; comments
+used to belong to a market).
+
+### `getComments(circleId)`
 
 ```ts
-getComments(marketId: number): Promise<Result<Comment[]>>
+getComments(circleId: number): Promise<Result<Comment[]>>
 ```
 
 Oldest first. Carries `user_id`, not a name — map it from `getMembers()`.
 
-### `addComment(marketId, body)`
+### `addComment(circleId, body)`
 
 ```ts
-addComment(marketId: number, body: string): Promise<Result<Comment>>
+addComment(circleId: number, body: string): Promise<Result<Comment>>
 ```
 
 Up to 1000 characters. **Returns** — the created row.
@@ -914,7 +917,7 @@ All five return an unsubscribe function.
 onMarketBets(marketId: number, cb: (c: Change<Bet>) => void): () => void
 onMarketChange(marketId: number, cb: (c: Change<Market>) => void): () => void
 onCircleMarkets(circleId: number, cb: (c: Change<Market>) => void): () => void
-onMarketComments(marketId: number, cb: (c: Change<Comment>) => void): () => void
+onCircleComments(circleId: number, cb: (c: Change<Comment>) => void): () => void
 onProposalVotes(proposalId: number, cb: (c: Change<ProposalVote>) => void): () => void
 ```
 
@@ -923,7 +926,7 @@ onProposalVotes(proposalId: number, cb: (c: Change<ProposalVote>) => void): () =
 | `onMarketBets` | Someone bets on this market | `getOdds`, `getMarketBets` |
 | `onMarketChange` | This market changes — usually cron advancing status, or a resolution | `getMarket` |
 | `onCircleMarkets` | A market in this circle is created or changed | `getMarkets` |
-| `onMarketComments` | New comment | `getComments` |
+| `onCircleComments` | New chat message in this circle | `getComments` |
 | `onProposalVotes` | Someone votes | `getVoteTally` |
 
 ```ts

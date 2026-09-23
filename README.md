@@ -8,16 +8,23 @@ Docs:
 [backend reference](supabase/BACKEND.md) ·
 [test harness](sandbox/README.md)
 
-## Spin up API and Client
+## Spin up the app
+There is no server to run: the browser talks to Supabase directly. First-time
+setup (Supabase project, Google sign-in, `apps/web/.env`) is in
+[supabase/README.md](supabase/README.md).
+
 From root repo
 ``` bash
 pnpm install
 pnpm dev
 ```
 
-Local URLs:
+Local URL:
 * Web app: http://localhost:5173
-* API health check: http://localhost:3001/health
+
+No Supabase or Google account yet? `pnpm demo` runs the same app against a local in-browser
+database with sample data and fake users (http://localhost:5175). See
+[sandbox/README.md](sandbox/README.md).
 
 
 ## BMAD instructions

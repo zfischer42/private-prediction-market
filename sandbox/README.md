@@ -8,7 +8,21 @@ cd sandbox && npm install && npm test
 ```
 
 Three passes run in order — parameter names, column types, then behaviour.
-Expected tail: `NO PARAM MISMATCHES`, `NO TYPE MISMATCHES`, `232 passed, 0 failed`.
+Expected tail: `NO PARAM MISMATCHES`, `NO TYPE MISMATCHES`, `the count printed at the end`.
+
+## Demo: the whole app, no accounts
+
+```bash
+cd sandbox && npm install   # once
+cd .. && pnpm install       # once
+pnpm demo                   # http://localhost:5175
+```
+
+Runs the real web app against the same in-browser Postgres, with a seeded circle and three
+fake users. Use the DEMO bar (bottom left) to switch between Alice (admin), Bob and Cara;
+"Continue with Google" signs in as Alice. Data lives in the tab, so a reload resets it.
+Realtime is not simulated: a screen refreshes after your own actions, not when another
+user acts. The real `apps/web/.env` is never loaded, so the demo cannot touch a real project.
 
 ## How it works
 

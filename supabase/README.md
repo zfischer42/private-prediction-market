@@ -1,8 +1,8 @@
 # Supabase
 
 Everything the app's backend is: one schema file, one storage bucket, one auth
-provider. There is no server to deploy — `apps/api` is a health-check stub, and
-the browser talks to Postgres directly through PostgREST.
+provider. There is no server to deploy — the browser talks to Postgres directly
+through PostgREST.
 
 - **What the schema does and why** — [`BACKEND.md`](BACKEND.md)
 - **The functions the app calls** — [`../apps/web/docs/api-reference.md`](../apps/web/docs/api-reference.md)

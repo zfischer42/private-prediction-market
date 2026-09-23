@@ -3,10 +3,11 @@
   "private": true,
   "packageManager": "pnpm@10.0.0",
   "scripts": {
-    "dev": "pnpm -r --parallel --filter @ppm/api --filter @ppm/web dev",
-    "build": "pnpm --filter @ppm/api build && pnpm --filter @ppm/web build",
+    "dev": "pnpm --filter @ppm/web dev",
+    "build": "pnpm --filter @ppm/web build",
     "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "demo": "npm --prefix sandbox run demo"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
