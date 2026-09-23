@@ -1,6 +1,6 @@
 import { voidBet, type Bet } from '../../lib';
 import { useRunner } from '../../hooks';
-import { betStatus, coins, signed, when } from '../../format';
+import { betStatus, money, signedMoney, when } from '../../format';
 import { ConfirmButton, Pill } from '../../ui';
 import type { NameOf, OptionRow } from './types';
 
@@ -18,12 +18,12 @@ export function MyBets({ bets, rows }: { bets: Bet[]; rows: OptionRow[] }) {
             <li key={b.id} className="stack tight">
               <div className="spread">
                 <span>
-                  <strong>{labels.get(b.option_id) ?? 'Option'}</strong> - {coins(b.amount)}
+                  <strong>{labels.get(b.option_id) ?? 'Option'}</strong> - {money(b.amount)}
                 </span>
                 <span className="row">
                   {b.status === 'pending' && b.was_late && <Pill tone="warn">Late</Pill>}
                   <Pill tone={status.tone}>{status.label}</Pill>
-                  {b.status === 'won' && <span className="gain">{signed(b.payout - b.amount)}</span>}
+                  {b.status === 'won' && <span className="gain">{signedMoney(b.payout - b.amount)}</span>}
                 </span>
               </div>
               {b.status === 'pending' && b.was_late && (
@@ -72,7 +72,7 @@ export function AllBets({
             <li key={b.id} className="spread">
               <span>
                 <strong>{nameOf(b.user_id)}</strong> on {labels.get(b.option_id) ?? 'Option'} -{' '}
-                {coins(b.amount)}
+                {money(b.amount)}
                 <span className="muted small"> {when(b.created_at)}</span>
               </span>
               {canVoid && b.status === 'pending' && (

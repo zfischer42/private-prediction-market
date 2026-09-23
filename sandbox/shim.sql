@@ -34,18 +34,29 @@ grant execute on function auth.uid() to anon, authenticated, service_role;
 create schema if not exists storage;
 
 create table storage.buckets (
-  id     text primary key,
-  name   text not null,
-  public boolean not null default false
+  id                 text primary key,
+  name               text not null,
+  public             boolean not null default false,
+  file_size_limit    bigint,
+  allowed_mime_types text[]
 );
 
+-- metadata->>'size' is how Storage records a file's byte size once its upload
+-- finishes; the evidence quotas read it.
 create table storage.objects (
-  id        uuid primary key default gen_random_uuid(),
-  bucket_id text references storage.buckets(id),
-  name      text not null,
-  owner     uuid
+  id         uuid primary key default gen_random_uuid(),
+  bucket_id  text references storage.buckets(id),
+  name       text not null,
+  owner      uuid,
+  metadata   jsonb,
+  created_at timestamptz not null default now()
 );
 alter table storage.objects enable row level security;
+
+-- Supabase grants these to `authenticated`; RLS then decides which rows. Without
+-- them the storage policies could not be exercised through the role at all.
+grant select, insert, update, delete on storage.objects to authenticated;
+grant select on storage.buckets to authenticated;
 
 -- Supabase's version returns the directory parts, dropping the filename:
 --   storage.foldername('12/34/x.png') -> {12,34}

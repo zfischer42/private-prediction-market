@@ -6,12 +6,14 @@ export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n.toLocaleString()} ${n === 1 ? one : many}`;
 }
 
-export const coins = (n: number): string => plural(n, 'coin');
+// All money in this app is play money - whole dollars, no real transactions -
+// but it's still shown with a $ so it reads as an amount rather than a score.
+export const money = (n: number): string => `$${n.toLocaleString()}`;
 
-export function signed(n: number): string {
-  if (n > 0) return `+${n.toLocaleString()}`;
-  if (n < 0) return `-${Math.abs(n).toLocaleString()}`;
-  return '0';
+export function signedMoney(n: number): string {
+  if (n > 0) return `+$${n.toLocaleString()}`;
+  if (n < 0) return `-$${Math.abs(n).toLocaleString()}`;
+  return '$0';
 }
 
 export function percent(n: number | null | undefined): string {
@@ -30,7 +32,8 @@ export function when(iso: string | null | undefined): string {
 }
 
 // "in 3h 12m" / "2d ago"
-export function relative(iso: string, now: Date = new Date()): string {
+export function relative(iso: string | null, now: Date = new Date()): string {
+  if (iso === null) return 'never';
   const ms = new Date(iso).getTime() - now.getTime();
   const mins = Math.round(Math.abs(ms) / 60_000);
   if (mins < 1) return 'just now';
@@ -59,6 +62,17 @@ export const KIND_LABEL: Record<MarketKind, string> = {
   open: 'Open entries',
 };
 
+// KIND_LABEL alone doesn't say what an over/under market is actually over or
+// under - "Over / Under" with no number told nobody anything. This is the one
+// badge that needs the market's own data, so every screen that shows a kind
+// badge should go through this instead of indexing KIND_LABEL directly.
+export function kindLabel(market: Pick<Market, 'kind' | 'line'>): string {
+  if (market.kind === 'over_under' && market.line !== null) {
+    return `Over / Under ${market.line}`;
+  }
+  return KIND_LABEL[market.kind];
+}
+
 export const KIND_HELP: Record<MarketKind, string> = {
   binary: 'Two options: Yes and No.',
   over_under: 'Bet over or under a number you set. Use a half number like 8.5 so a tie is impossible.',
@@ -77,7 +91,9 @@ export function phaseOf(
   if (market.status === 'resolved') return { key: 'resolved', label: 'Resolved', tone: 'good' };
   if (market.status === 'voided') return { key: 'voided', label: 'Voided', tone: 'muted' };
   if (isBettingOpen(market, now)) {
-    return { key: 'open', label: `Closes ${relative(market.closes_at, now)}`, tone: 'accent' };
+    return market.closes_at === null
+      ? { key: 'open', label: 'Open - no end date', tone: 'accent' }
+      : { key: 'open', label: `Closes ${relative(market.closes_at, now)}`, tone: 'accent' };
   }
   if (now < new Date(market.opens_at)) {
     return { key: 'upcoming', label: `Opens ${relative(market.opens_at, now)}`, tone: 'neutral' };

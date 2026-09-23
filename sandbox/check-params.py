@@ -9,6 +9,14 @@ for m in re.finditer(
     r"create or replace function public\.([a-z_]+)\s*\((.*?)\)\s*\n?\s*returns",
     sql, re.S | re.I):
     name, body = m.group(1), m.group(2)
+    # Strip trailing "-- comment" text line by line BEFORE splitting on commas.
+    # Without this, a comment on the same line as one param's default (e.g.
+    # "_closes_at timestamptz default null,  -- v7: omit for ...") merges with
+    # the next comma-segment, so the regex below never matches it and that
+    # param silently vanishes from `params` - a false "unknown param" for a
+    # real, correct call, or worse, a param quietly dropped from `required`
+    # with no error at all.
+    body = re.sub(r"--.*", "", body)
     params, required = [], []
     for line in body.split(","):
         line = line.strip()

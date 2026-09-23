@@ -11,7 +11,7 @@ import {
 } from '../../lib';
 import { useResource, useRunner } from '../../hooks';
 import { navigate } from '../../router';
-import { coins } from '../../format';
+import { money } from '../../format';
 import { ConfirmButton, ErrorNote, Loading, Pill, useToast } from '../../ui';
 
 export default function MembersTab({
@@ -104,7 +104,7 @@ function RenameForm({
       <h2>Your name in this circle</h2>
       <label className="field">
         <span>Display name</span>
-        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} required />
+        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} required />
       </label>
       <button className="btn" disabled={runner.busy || !name.trim() || name.trim() === current}>
         Save name
@@ -138,7 +138,7 @@ function MemberRow({
     e.preventDefault();
     const n = Number(amount);
     if (!Number.isInteger(n) || n === 0) {
-      toast('Enter a whole number of coins. A negative number takes coins away.', 'error');
+      toast('Enter a whole number of dollars. A negative number takes dollars away.', 'error');
       return;
     }
     const res = await runner.run(
@@ -172,7 +172,7 @@ function MemberRow({
         <div>
           <strong>{member.display_name ?? 'Someone'}</strong>
           {isMe && <span className="muted"> (you)</span>}
-          <p className="muted">{coins(member.balance)}</p>
+          <p className="muted">{money(member.balance)}</p>
         </div>
         <div className="row">
           {isCreator && <Pill tone="muted">Creator</Pill>}
@@ -194,7 +194,7 @@ function MemberRow({
         <div className="stack manage">
           <form className="row form-row" onSubmit={adjust}>
             <label className="field">
-              <span>Coins (+/-)</span>
+              <span>Dollars (+/-)</span>
               <input
                 type="number"
                 step={1}

@@ -1,7 +1,7 @@
 # Prediction Market — Backend Reference
 
 Postgres/Supabase backend for a private, friends-only prediction market.
-Schema file: `schema_v4.sql` (2,947 lines, single-file install).
+Schema file: [`migrations/0001_initial.sql`](migrations/0001_initial.sql), currently v7 (~3,300 lines, single-file install).
 
 ---
 
@@ -100,10 +100,10 @@ erDiagram
     circles ||--o{ seasons : has
     circles ||--o{ markets : contains
     circles ||--o{ coin_ledger : records
+    circles ||--o{ comments : discusses
     markets ||--o{ market_options : offers
     markets ||--o{ bets : receives
     markets ||--o{ resolution_proposals : resolves_via
-    markets ||--o{ comments : discusses
     markets ||--o{ market_evidence : proves
     market_options ||--o{ bets : staked_on
     resolution_proposals ||--o{ proposal_votes : polled_by
@@ -123,7 +123,7 @@ erDiagram
 | `resolution_proposals` | Outcome claims | `proposed_option_id`, `bond`, `status` |
 | `market_evidence` | Photos/video | `storage_path`, `proposal_id` |
 | `coin_ledger` | **Append-only** money log | `amount`, `reason`, `actor_id` |
-| `comments` | Trash talk | `body` |
+| `comments` | Circle chat | `circle_id`, `body` |
 | `proposal_votes` | Advisory poll | `vote` |
 | `notifications` | In-app alerts | `url`, `sent_at`, `read_at` |
 | `push_subscriptions` | Web push endpoints | `endpoint`, `p256dh`, `auth` |
@@ -138,10 +138,10 @@ Four separate fields, each with one job:
 | Column | Meaning |
 |---|---|
 | `opens_at` | Betting starts |
-| `closes_at` | Betting ends |
+| `closes_at` | Betting ends. **Nullable** — leave it out for a standing bet with nothing to schedule ("next person to X"). Betting then never auto-closes; `propose_resolution` has no minimum wait, and `reject_close` still works, giving it a real `closes_at` of `now()` |
 | `event_start_at` | The thing happens |
-| `event_end_at` | The thing is over and knowable — gates `propose_resolution`. Must be **at or after `closes_at`**: an event that ends while betting is live lets the quarantine line be drawn mid-market |
-| `options_lock_at` | Derived: `closes_at - 15 min` for `open` markets |
+| `event_end_at` | The thing is over and knowable — gates `propose_resolution`. Must be **at or after `closes_at`** when both are set: an event that ends while betting is live lets the quarantine line be drawn mid-market |
+| `options_lock_at` | Derived: `closes_at - 15 min` for `open` markets. Null when `closes_at` is |
 
 `status` progresses `scheduled → open → closed → resolved | voided`. It is
 cosmetic: eligibility checks read timestamps directly.
@@ -175,7 +175,7 @@ the message is the exact string in the Errors column, so match on it directly.
 const { data, error } = await supabase.rpc('place_bet', {
   _market_id: 12, _option_id: 34, _amount: 100
 })
-if (error) showToast(error.message)   // e.g. "Not enough coins"
+if (error) showToast(error.message)   // e.g. "Not enough dollars"
 ```
 
 ### 4.1 Circles and membership
@@ -217,7 +217,7 @@ refuses to push a balance below zero, and ledgers every change with `actor_id`.
 
 | Function | Params | Returns | Errors |
 |---|---|---|---|
-| `create_market` | `_circle_id, _question, _kind, _closes_at` + optional `_options text[]`, `_line numeric`, `_subject_id uuid`, `_opens_at`, `_event_start_at`, `_event_end_at`, `_image_url` | `bigint` market id | Not a member of this circle · Betting must close after it opens · The event cannot end before betting closes · The event cannot start after it ends · The tagged person is not in this circle · Over/under needs a line · Use a half number for the line… · Multiple choice needs at least 2 options · Unknown market kind · Duplicate option: "x"… |
+| `create_market` | `_circle_id, _question, _kind` + optional `_closes_at timestamptz` (omit for no scheduled close), `_options text[]`, `_line numeric`, `_subject_id uuid`, `_opens_at`, `_event_start_at`, `_event_end_at`, `_image_url` | `bigint` market id | Not a member of this circle · Betting must close after it opens · The event cannot end before betting closes · The event cannot start after it ends · The tagged person is not in this circle · Over/under needs a line · Use a half number for the line… · Multiple choice needs at least 2 options · Unknown market kind · Duplicate option: "x"… |
 | `update_market` | `_market_id` + optional `_question`, `_image_url`, `_closes_at`, `_opens_at`, `_event_start_at`, `_event_end_at`, `_subject_id` | void | Market not found · That market has already settled · Only the market creator or a circle admin can edit this · Bets have been placed. Only the image can be changed now… · Bets have been placed. Only a circle admin can change the event timing now. · The event cannot end before betting closes · The event cannot start after it ends |
 | `cancel_market` | `_market_id bigint` | void | Market not found · That market has already settled and cannot be cancelled · Only the market creator or a circle admin can cancel this · Bets have been placed. Use void_market() to refund everyone instead. |
 | `submit_option` | `_market_id bigint, _label text` | `bigint` option id | This market has fixed options · This market has settled · Option submissions have closed · This market has not opened yet · Betting has closed · Not a member · That option already exists |
@@ -236,7 +236,7 @@ exist, use `void_market` to refund everyone instead.
 
 | Function | Params | Returns | Errors |
 |---|---|---|---|
-| `place_bet` | `_market_id bigint, _option_id bigint, _amount int` | `int` new balance | Amount must be positive · This market has already settled · Betting has closed · Betting has not opened yet · Not a member of this circle · You cannot bet on a market about yourself · That option does not belong to this market · Not enough coins |
+| `place_bet` | `_market_id bigint, _option_id bigint, _amount int` | `int` new balance | Amount must be positive · This market has already settled · Betting has closed · Betting has not opened yet · Not a member of this circle · You cannot bet on a market about yourself · That option does not belong to this market · Not enough dollars |
 
 Balance check and deduction happen in a single statement, so two fast taps
 cannot spend the same coins. Verified: 12 parallel 100-coin bets against a
@@ -246,7 +246,7 @@ cannot spend the same coins. Verified: 12 parallel 100-coin bets against a
 
 | Function | Params | Returns | Errors |
 |---|---|---|---|
-| `propose_resolution` | `_market_id bigint, _option_id bigint, _note text` | `bigint` proposal id | This market is already settled · Not a member · The event has not finished yet · That option does not belong to this market · Not enough coins to post the bond |
+| `propose_resolution` | `_market_id bigint, _option_id bigint, _note text` | `bigint` proposal id | This market is already settled · Not a member · The event has not finished yet · That option does not belong to this market · Not enough dollars to post the bond |
 | `review_proposal` | `_proposal_id bigint, _action text` | void | Unknown action · Proposal not found or already reviewed · Only circle admins can review proposals |
 | `vote_on_proposal` | `_proposal_id bigint, _vote text` | void | Invalid vote · Not a member of this circle · This proposal has already been reviewed |
 | `clear_proposal_vote` | `_proposal_id bigint` | void | — |
@@ -502,7 +502,7 @@ financial rows; they are keyed by uuid and carry no personal data.
 ### Error handling in the UI
 
 Server errors surface as raw Postgres messages. Worth mapping to friendly text
-at minimum: "Not enough coins", "Betting has closed", "You cannot bet on a
+at minimum: "Not enough dollars", "Betting has closed", "You cannot bet on a
 market about yourself", "Bets have been placed…", and the settled-market
 rejections.
 
@@ -553,3 +553,8 @@ today.
 | v2 | Bond moved server-side; locking added to `place_bet`/`void_bet`; timestamp-driven eligibility; ledger reconciliation; seasons wired up; leave/remove/update/cancel added |
 | v3 | **Section 2.5 Data API grants.** Without it the schema installs and every client read returns 42501 |
 | v4 | `options_lock_at` recalculated when `update_market` moves the window; `cancel_market` clears orphaned notifications; hard `closes_at` ceiling in `submit_option` |
+| v5 | `event_end_at` validated against `closes_at` in both `create_market` and `update_market`; `reject_close`/`reject_reopen` fixed (window ordering, quarantine line clearing); evidence storage policies made to agree on which circle a path belongs to |
+| v6 | Evidence storage limited: JPEG only, 2 MiB a file, 6 photos per market, 100 MiB per circle, 800 MiB total; a circle admin may delete settled evidence 30 days after settlement |
+| v7 | `closes_at` is now optional. A market with no scheduled close stays open until someone proposes what happened, with no minimum wait |
+| v8 | The unit shown to a user renamed from "coins" to "dollars" - wording only, in `place_bet`/`propose_resolution`'s error strings. `coin_ledger` and every other internal identifier are unchanged |
+| v9 | `comments` moved from per-market to per-circle: one running chat for the whole group instead of separate threads under each bet. `market_id` becomes `circle_id`; old rows are backfilled from the market they pointed at |

@@ -33,7 +33,7 @@ Every function returns `{ data }` or `{ error }`. Never both, never a throw.
 
 ```ts
 const { data, error } = await placeBet(marketId, optionId, 100);
-if (error) return showToast(error);   // "Not enough coins"
+if (error) return showToast(error);   // "Not enough dollars"
 setBalance(data);                     // new balance
 ```
 

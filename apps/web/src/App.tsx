@@ -35,11 +35,19 @@ function Gate() {
       </div>
     );
   }
-  if (user === null) return <SignIn />;
+  if (user === null) {
+    return (
+      <>
+        <InstallHint />
+        <SignIn />
+      </>
+    );
+  }
 
   // Keyed by user so a change of identity can never leave the previous person's data on screen.
   return (
     <MeContext.Provider key={user.id} value={user}>
+      <InstallHint />
       <Shell>
         <Routes />
       </Shell>
@@ -72,6 +80,71 @@ function Routes() {
       <Link to="/" className="btn">
         Back to your circles
       </Link>
+    </div>
+  );
+}
+
+const INSTALL_HINT_SEEN_KEY = 'ppm_install_hint_seen';
+
+// Shown once, the first time this browser opens the app, on whichever screen
+// that happens to be (sign-in or straight into a circle). There is no
+// beforeinstallprompt on iOS Safari - the only "install" that exists there is
+// Share -> Add to Home Screen, and nothing tells a person that unless the
+// page does. Once dismissed, or once already running installed, it is gone
+// for good - localStorage remembers per browser, not per account.
+function InstallHint() {
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(INSTALL_HINT_SEEN_KEY) === '1';
+    } catch {
+      return true; // can't remember the dismissal, so don't risk nagging every load
+    }
+  });
+
+  const standalone =
+    typeof window !== 'undefined' &&
+    (window.matchMedia?.('(display-mode: standalone)').matches ||
+      // Older iOS Safari's own flag - there is no display-mode media query there.
+      (window.navigator as { standalone?: boolean }).standalone === true);
+
+  if (dismissed || standalone) return null;
+
+  const isIOS = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  function dismiss() {
+    try {
+      localStorage.setItem(INSTALL_HINT_SEEN_KEY, '1');
+    } catch {
+      // No storage (private mode, etc.) - it just asks again next time.
+    }
+    setDismissed(true);
+  }
+
+  return (
+    <div
+      style={{
+        padding: '0.75rem max(1rem, env(safe-area-inset-right)) 0 max(1rem, env(safe-area-inset-left))',
+        paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+      }}
+    >
+      <div className="note" style={{ maxWidth: '42rem', margin: '0 auto' }}>
+        <p className="small" style={{ margin: 0 }}>
+          {isIOS ? (
+            <>
+              Add this to your home screen: tap <strong>Share</strong>, then{' '}
+              <strong>Add to Home Screen</strong>.
+            </>
+          ) : (
+            <>
+              Add this to your home screen from your browser's menu - it opens full-screen next
+              time, just like an app.
+            </>
+          )}
+        </p>
+        <button type="button" className="btn small ghost" onClick={dismiss}>
+          Got it
+        </button>
+      </div>
     </div>
   );
 }

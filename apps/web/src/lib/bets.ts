@@ -9,10 +9,10 @@ import type { Bet, BetStatus, Market, MarketOption } from './types';
 //
 // The balance check and the deduction happen in one statement server-side,
 // so double-tapping cannot spend the same coins twice - the second call
-// just comes back "Not enough coins".
+// just comes back "Not enough dollars".
 //
 // Expect: "Betting has closed" / "Betting has not opened yet" /
-// "Not enough coins" / "You cannot bet on a market about yourself".
+// "Not enough dollars" / "You cannot bet on a market about yourself".
 export function placeBet(
   marketId: number,
   optionId: number,

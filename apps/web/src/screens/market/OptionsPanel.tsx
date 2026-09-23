@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { canSubmitOption, submitOption, type Market } from '../../lib';
 import { useRunner } from '../../hooks';
-import { percent, plural, when } from '../../format';
+import { money, percent, plural, when } from '../../format';
 import { Pill } from '../../ui';
 import type { OptionRow } from './types';
 
@@ -52,7 +52,7 @@ export default function OptionsPanel({
                 <span style={{ width: `${r.pct ?? 0}%` }} />
               </div>
               <p className="muted small">
-                {plural(r.pool, 'coin')} from {plural(r.betCount, 'bet')}
+                {money(r.pool)} from {plural(r.betCount, 'bet')}
               </p>
             </li>
           ))}

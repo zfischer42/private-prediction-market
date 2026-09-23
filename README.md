@@ -22,6 +22,10 @@ pnpm dev
 Local URL:
 * Web app: http://localhost:5173
 
+No Supabase or Google account yet? `pnpm demo` runs the same app against a local in-browser
+database with sample data and fake users (http://localhost:5175). See
+[sandbox/README.md](sandbox/README.md).
+
 
 ## BMAD instructions
 

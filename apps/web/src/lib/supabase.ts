@@ -21,7 +21,7 @@ export const supabase = createClient(url, anonKey);
 //
 // Every function in this folder returns either { data } or { error }.
 // `error` is the plain-English message the database raised, already safe
-// to show the user - e.g. "Not enough coins", "Betting has closed".
+// to show the user - e.g. "Not enough dollars", "Betting has closed".
 //
 //   const { data, error } = await placeBet(marketId, optionId, 100);
 //   if (error) return showToast(error);

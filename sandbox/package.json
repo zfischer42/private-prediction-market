@@ -6,7 +6,8 @@
     "test": "python3 check-params.py && node build.mjs && node check-types.mjs && node run.mjs",
     "test:params": "python3 check-params.py",
     "test:types": "node check-types.mjs",
-    "test:run": "node build.mjs && node run.mjs"
+    "test:run": "node build.mjs && node run.mjs",
+    "demo": "../apps/web/node_modules/.bin/vite --config demo/vite.config.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.7",

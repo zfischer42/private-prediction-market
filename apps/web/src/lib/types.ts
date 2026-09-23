@@ -86,7 +86,9 @@ export interface Market {
   image_url: string | null;
   subject_id: Uuid | null;
   opens_at: Timestamp;
-  closes_at: Timestamp;
+  // v7: null means no scheduled close - the market stays open until someone
+  // proposes what happened. See isBettingOpen()/canProposeResolution().
+  closes_at: Timestamp | null;
   event_start_at: Timestamp | null;
   event_end_at: Timestamp | null;
   options_lock_at: Timestamp | null;
@@ -160,9 +162,10 @@ export interface LedgerEntry {
   created_at: Timestamp;
 }
 
+// v9: one running chat per circle, not one per market.
 export interface Comment {
   id: number;
-  market_id: number;
+  circle_id: number;
   user_id: Uuid;
   body: string;
   created_at: Timestamp;
@@ -235,6 +238,20 @@ export interface SeasonLeaderboardRow {
   net_profit: number;
   win_pct: number | null;
   biggest_win: number;
+}
+
+// What evidence_upload_status() says about adding a photo to one market. The
+// numbers are the ones the database enforces, so show them rather than copying them.
+export interface EvidenceUploadStatus {
+  allowed: boolean;
+  // A sentence fit to show when `allowed` is false; null when it is true.
+  reason: string | null;
+  files: number;             // photos already on this market
+  max_files: number;
+  circle_bytes: number;      // what this whole circle has stored
+  max_circle_bytes: number;
+  max_file_bytes: number;    // per photo, after shrinking
+  purge_after_days: number;  // admins may delete settled evidence this long after settlement
 }
 
 // Advisory only. The admin still decides; these votes bind nothing.

@@ -2,6 +2,8 @@ import { useEffect, useMemo } from 'react';
 import {
   cancelMarket,
   getCircle,
+  getEvidence,
+  getEvidenceUploadStatus,
   getMarketBets,
   getMarketWithOptions,
   getMembers,
@@ -11,18 +13,19 @@ import {
   isSettled,
   onMarketBets,
   onMarketChange,
+  removeMarketFiles,
   type Market,
   type MarketOption,
 } from '../lib';
 import { useMe, useNow, useResource, useRunner } from '../hooks';
 import { Link, navigate } from '../router';
-import { KIND_LABEL, phaseOf, when } from '../format';
+import { kindLabel, phaseOf, when } from '../format';
 import { ConfirmButton, ErrorNote, Loading, Pill } from '../ui';
 import OptionsPanel from './market/OptionsPanel';
 import BetPanel from './market/BetPanel';
 import { AllBets, MyBets } from './market/BetsList';
 import ResolutionPanel from './market/ResolutionPanel';
-import Comments from './market/Comments';
+import EvidencePanel from './market/EvidencePanel';
 import type { NameOf, OptionRow } from './market/types';
 
 export default function MarketScreen({ marketId }: { marketId: number }) {
@@ -56,6 +59,8 @@ function MarketView({
   const members = useResource(() => getMembers(market.circle_id), [market.circle_id]);
   const odds = useResource(() => getOdds(market.id), [market.id]);
   const bets = useResource(() => getMarketBets(market.id), [market.id]);
+  const evidence = useResource(() => getEvidence(market.id), [market.id]);
+  const evidenceStatus = useResource(() => getEvidenceUploadStatus(market.id), [market.id]);
 
   // Realtime is a nudge, not data: refetch rather than patching state from the payload.
   useEffect(() => {
@@ -130,7 +135,19 @@ function MarketView({
 
   const canCancel = !settled && allBets.length === 0 && (isAdmin || market.creator_id === me.id);
 
+  const refreshPhotos = () => {
+    void evidence.reload();
+    void evidenceStatus.reload();
+  };
+  const photoStatus = evidenceStatus.data;
+  const photoRoom =
+    photoStatus?.allowed ? { remaining: photoStatus.max_files - photoStatus.files, maxBytes: photoStatus.max_file_bytes } : null;
+
   async function onCancel() {
+    // Photos first. Once the market row is gone nobody is allowed to delete its files, so
+    // they would sit in storage, unreachable and still counting against the quota.
+    const files = await cancelling.run(() => removeMarketFiles(market.id));
+    if (files.error !== undefined) return;
     const res = await cancelling.run(() => cancelMarket(market.id), 'Market cancelled');
     if (res.error === undefined) navigate(`/circle/${market.circle_id}`);
   }
@@ -143,16 +160,15 @@ function MarketView({
 
       <div className="row">
         <Pill tone={phase.tone}>{phase.label}</Pill>
-        <Pill tone="muted">
-          {KIND_LABEL[market.kind]}
-          {market.line !== null ? ` ${market.line}` : ''}
-        </Pill>
+        <Pill tone="muted">{kindLabel(market)}</Pill>
       </div>
       <h1>{market.question}</h1>
       {market.subject_id && <p className="muted">About {nameOf(market.subject_id)}</p>}
       <p className="muted small">
-        Betting {when(market.opens_at)} to {when(market.closes_at)}. Result known by{' '}
-        {when(market.event_end_at ?? market.closes_at)}.
+        {market.closes_at === null
+          ? <>Betting opened {when(market.opens_at)}. No scheduled close - stays open until someone reports what happened.</>
+          : <>Betting {when(market.opens_at)} to {when(market.closes_at)}. Result known by{' '}
+            {when(market.event_end_at ?? market.closes_at)}.</>}
       </p>
 
       <OptionsPanel market={market} rows={rows} now={now} onChanged={refreshAll} />
@@ -177,7 +193,20 @@ function MarketView({
         isAdmin={isAdmin}
         bond={circle.data.proposal_bond}
         now={now}
+        photoRoom={photoRoom}
+        onPhotosChanged={refreshPhotos}
         onChanged={refreshAll}
+      />
+
+      <EvidencePanel
+        market={market}
+        evidence={evidence}
+        status={evidenceStatus}
+        nameOf={nameOf}
+        myId={me.id}
+        isAdmin={isAdmin}
+        now={now}
+        onChanged={refreshPhotos}
       />
 
       <AllBets
@@ -187,8 +216,6 @@ function MarketView({
         canVoid={isAdmin && !settled}
         onChanged={refreshMoney}
       />
-
-      <Comments marketId={market.id} nameOf={nameOf} myId={me.id} />
 
       {canCancel && (
         <div className="card stack">

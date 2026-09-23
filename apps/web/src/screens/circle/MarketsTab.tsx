@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
-import { getMarkets, onCircleMarkets, type Market } from '../../lib';
+import { getMarkets, onCircleMarkets, type Market, type MarketOption } from '../../lib';
 import { useNow, useResource } from '../../hooks';
 import { Link } from '../../router';
-import { KIND_LABEL, phaseOf, type Phase } from '../../format';
+import { kindLabel, phaseOf, type Phase } from '../../format';
 import { Empty, ErrorNote, Loading, Pill } from '../../ui';
+
+type MarketRow = Market & { options: MarketOption[] };
 
 const SECTIONS: Array<{ phase: Phase; title: string }> = [
   { phase: 'open', title: 'Open for betting' },
@@ -26,7 +28,7 @@ export default function MarketsTab({ circleId }: { circleId: number }) {
     return <ErrorNote message={markets.error ?? 'Could not load markets.'} onRetry={markets.reload} />;
   }
 
-  const byPhase = (phase: Phase): Market[] =>
+  const byPhase = (phase: Phase): MarketRow[] =>
     markets.data!.filter((m) => {
       const p = phaseOf(m, now).key;
       // Voided markets sit with the settled ones.
@@ -47,8 +49,13 @@ export default function MarketsTab({ circleId }: { circleId: number }) {
         const items = byPhase(phase);
         if (items.length === 0) return null;
         // Soonest deadline first while it matters; newest first once settled.
+        // A standing bet (no closes_at) has no deadline pressure, so it sorts
+        // after everything that does rather than accidentally claiming first
+        // place (new Date(null) is the epoch, which is always "soonest").
         if (phase === 'open' || phase === 'upcoming') {
-          items.sort((a, b) => new Date(a.closes_at).getTime() - new Date(b.closes_at).getTime());
+          const deadline = (m: (typeof items)[number]) =>
+            m.closes_at === null ? Infinity : new Date(m.closes_at).getTime();
+          items.sort((a, b) => deadline(a) - deadline(b));
         }
         return (
           <section key={phase} className="stack">
@@ -56,14 +63,31 @@ export default function MarketsTab({ circleId }: { circleId: number }) {
             <ul className="list">
               {items.map((m) => {
                 const p = phaseOf(m, now);
+                // sort_order, not insertion order - matches every other options list in the app.
+                const options = [...m.options].sort((a, b) => a.sort_order - b.sort_order);
                 return (
                   <li key={m.id}>
                     <Link to={`/market/${m.id}`} className="card link">
                       <strong>{m.question}</strong>
                       <div className="row">
                         <Pill tone={p.tone}>{p.label}</Pill>
-                        <Pill tone="muted">{KIND_LABEL[m.kind]}</Pill>
+                        <Pill tone="muted">{kindLabel(m)}</Pill>
                       </div>
+                      {options.length === 0 ? (
+                        <span className="muted small">No options yet</span>
+                      ) : (
+                        <div className="row">
+                          {options.map((o) => (
+                            <Pill
+                              key={o.id}
+                              tone={o.id === m.winning_option_id ? 'good' : 'muted'}
+                              className="wrap"
+                            >
+                              {o.label}
+                            </Pill>
+                          ))}
+                        </div>
+                      )}
                     </Link>
                   </li>
                 );

@@ -1,20 +1,27 @@
 :root {
   color-scheme: dark;
   font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --bg: #020617;
-  --surface: rgba(15, 23, 42, 0.72);
-  --field: rgba(2, 6, 23, 0.6);
-  --line: rgba(148, 163, 184, 0.2);
-  --line-strong: rgba(148, 163, 184, 0.4);
-  --text: #e2e8f0;
-  --muted: #94a3b8;
+  /* True black, not navy - every neutral below is grey with no hue in it,
+     so the only color anywhere is the blue accent, on purpose. */
+  --bg: #000000;
+  --surface: rgba(255, 255, 255, 0.08);
+  --field: rgba(255, 255, 255, 0.04);
+  --line: rgba(255, 255, 255, 0.14);
+  --line-strong: rgba(255, 255, 255, 0.26);
+  --text: #f5f5f5;
+  --muted: #a3a3a3;
   --accent: #3b82f6;
   --accent-fill: #2563eb;
   --accent-soft: #93c5fd;
   --good: #34d399;
   --warn: #fbbf24;
   --bad: #f87171;
-  --radius: 1rem;
+  /* Kept small and uniform on purpose - a card, a button and a tag all read
+     as one system this way, instead of the soft, everything-is-a-capsule
+     look (heavy pill chips/badges, big rounded cards) that reads as a
+     generic trading-app template rather than this app's own design. */
+  --radius: 0.5rem;
+  --radius-sm: 0.375rem;
   background: var(--bg);
   color: var(--text);
 }
@@ -32,11 +39,12 @@ body,
 
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top, rgba(59, 130, 246, 0.24), transparent 30%),
-    linear-gradient(180deg, #020617 0%, #0f172a 100%);
-  background-attachment: fixed;
+  min-height: 100dvh;
+  background: var(--bg);
   line-height: 1.45;
+  /* No highlight flash on tap - Android shows one by default, iOS doesn't,
+     so without this the app feels inconsistent between the two. */
+  -webkit-tap-highlight-color: transparent;
 }
 
 h1,
@@ -84,7 +92,9 @@ a {
   width: 100%;
   max-width: 42rem;
   margin: 0 auto;
-  padding: 1.25rem 1rem 5rem;
+  /* left/right matter in landscape on a notched phone; bottom's already
+     generous to clear the toasts, so the home-indicator inset rides free. */
+  padding: 1.25rem max(1rem, env(safe-area-inset-right)) 5rem max(1rem, env(safe-area-inset-left));
 }
 
 .topbar {
@@ -92,8 +102,11 @@ a {
   top: 0;
   z-index: 10;
   border-bottom: 1px solid var(--line);
-  background: rgba(2, 6, 23, 0.85);
+  background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(12px);
+  /* Installed standalone on iOS, this bar sits under the status bar/notch
+     without it - the sticky position alone doesn't account for that inset. */
+  padding-top: env(safe-area-inset-top);
 }
 
 .topbar-inner {
@@ -180,6 +193,7 @@ a {
 
 .splash {
   min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
 }
@@ -195,7 +209,7 @@ a {
 }
 
 .lede {
-  color: #cbd5e1;
+  color: #d4d4d4;
   line-height: 1.6;
 }
 
@@ -251,7 +265,7 @@ a {
   color: var(--accent-soft);
   background: var(--field);
   border: 1px dashed var(--line-strong);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-sm);
   padding: 0.3rem 0.6rem;
   cursor: pointer;
 }
@@ -297,7 +311,7 @@ details.card[open] > summary {
   gap: 0.75rem;
   padding: 0.75rem 1rem;
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: var(--radius);
 }
 
 .note.error {
@@ -329,8 +343,8 @@ details.card[open] > summary {
   min-height: 2.75rem;
   padding: 0.5rem 1rem;
   border: 1px solid var(--line-strong);
-  border-radius: 0.75rem;
-  background: rgba(148, 163, 184, 0.12);
+  border-radius: var(--radius);
+  background: rgba(161, 161, 161, 0.12);
   color: var(--text);
   font: inherit;
   font-weight: 600;
@@ -339,7 +353,7 @@ details.card[open] > summary {
 }
 
 .btn:hover:not(:disabled) {
-  background: rgba(148, 163, 184, 0.22);
+  background: rgba(161, 161, 161, 0.22);
 }
 
 .btn:disabled {
@@ -402,7 +416,7 @@ textarea {
   min-height: 2.75rem;
   padding: 0.6rem 0.85rem;
   border: 1px solid var(--line-strong);
-  border-radius: 0.75rem;
+  border-radius: var(--radius);
   background: var(--field);
   color: var(--text);
   font: inherit;
@@ -423,7 +437,7 @@ textarea {
   min-height: 2.5rem;
   padding: 0.35rem 0.9rem;
   border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text);
   font: inherit;
@@ -470,9 +484,9 @@ textarea {
 .pill {
   display: inline-block;
   padding: 0.15rem 0.6rem;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.16);
-  color: #cbd5e1;
+  border-radius: var(--radius-sm);
+  background: rgba(161, 161, 161, 0.16);
+  color: #d4d4d4;
   font-size: 0.75rem;
   font-weight: 600;
   white-space: nowrap;
@@ -499,8 +513,19 @@ textarea {
 }
 
 .pill.muted {
-  background: rgba(148, 163, 184, 0.1);
+  background: rgba(161, 161, 161, 0.1);
   color: var(--muted);
+}
+
+/* Every other pill is short, fixed, system-generated text ("Closes in 23h
+   52m") where nowrap keeps it tidy. Option labels are free text up to 100
+   characters (market_options_label_check) - forced onto one unbreakable
+   line, a long one overflows its card and forces the whole page to scroll
+   horizontally on a phone. This one needs to wrap instead. */
+.pill.wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
 }
 
 .badge {
@@ -524,8 +549,8 @@ textarea {
 
 .bar {
   height: 0.5rem;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.18);
+  border-radius: var(--radius-sm);
+  background: rgba(161, 161, 161, 0.18);
   overflow: hidden;
 }
 
@@ -564,6 +589,7 @@ textarea {
 
 .signin {
   min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
   padding: 1.5rem 1rem;
@@ -576,10 +602,10 @@ textarea {
   width: min(100%, 28rem);
   padding: 2rem 1.5rem;
   border: 1px solid var(--line);
-  border-radius: 1.5rem;
+  border-radius: var(--radius);
   background: var(--surface);
   backdrop-filter: blur(20px);
-  box-shadow: 0 24px 80px rgba(2, 6, 23, 0.45);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
 }
 
 .signin-card h1 {
@@ -606,8 +632,8 @@ textarea {
   max-width: 28rem;
   padding: 0.7rem 1rem;
   border: 1px solid var(--line-strong);
-  border-radius: 0.75rem;
-  background: #0f172a;
+  border-radius: var(--radius);
+  background: #161616;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
   pointer-events: auto;
 }
@@ -621,4 +647,65 @@ textarea {
   * {
     transition: none !important;
   }
+}
+
+/* ---- Photos ---------------------------------------------------------- */
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.75rem;
+}
+
+.photo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.photo img,
+.photo-missing {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--radius);
+  background: var(--field);
+}
+
+.photo .small {
+  overflow-wrap: anywhere;
+}
+
+/* .photo is a flex column, whose default align-items:stretch otherwise
+   stretches the Delete button to the card's full width - centering its
+   text so it reads as floating loose under the caption, not as a button. */
+.photo > .btn {
+  align-self: flex-start;
+}
+
+/* The real file input sits invisibly over the button so the keyboard can still reach it. */
+.file-btn {
+  position: relative;
+  cursor: pointer;
+}
+
+.file-btn input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-height: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.file-btn:focus-within {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 2px;
+}
+
+.file-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

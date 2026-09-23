@@ -47,8 +47,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 // ---- Small pieces -----------------------------------------------------
 
-export function Pill({ tone = 'neutral', children }: { tone?: Tone; children: ReactNode }) {
-  return <span className={`pill ${tone}`}>{children}</span>;
+export function Pill({
+  tone = 'neutral',
+  className,
+  children,
+}: {
+  tone?: Tone;
+  className?: string;
+  children: ReactNode;
+}) {
+  return <span className={`pill ${tone}${className ? ` ${className}` : ''}`}>{children}</span>;
 }
 
 export function Loading({ label = 'Loading...' }: { label?: string }) {

@@ -20,7 +20,11 @@ export interface CreateMarketInput {
   circleId: number;
   question: string;
   kind: MarketKind;
-  closesAt: Date | Timestamp;
+
+  // Omit for a standing bet with nothing to schedule in advance ("who blacks
+  // out first") - betting then never auto-closes, and anyone can propose a
+  // result the moment it actually happens.
+  closesAt?: Date | Timestamp;
 
   // 'multi' only: at least 2, and near-duplicates are rejected
   // ("Yes " and "yes" count as the same option).
@@ -173,13 +177,15 @@ export function submitOption(
 // Careful with `status`: a cron job advances it, so it can lag by a minute
 // or two. For "can I still bet on this?" compare closes_at to now instead,
 // which is what the server does.
+// Options come along for the ride - a market list is not useful to look at
+// without knowing what a person would actually be picking between.
 export function getMarkets(
   circleId: number,
   opts: { status?: MarketStatus | MarketStatus[]; limit?: number } = {},
-): Promise<Result<Market[]>> {
+): Promise<Result<Array<Market & { options: MarketOption[] }>>> {
   let query = supabase
     .from('markets')
-    .select('*')
+    .select('*, options:market_options!market_options_market_id_fkey(*)')
     .eq('circle_id', circleId)
     .order('closes_at', { ascending: false })
     .limit(opts.limit ?? 50);
@@ -257,7 +263,9 @@ export function getOdds(marketId: number): Promise<Result<MarketOdds[]>> {
 
 export function isBettingOpen(market: Market, now: Date = new Date()): boolean {
   if (market.status === 'resolved' || market.status === 'voided') return false;
-  return now >= new Date(market.opens_at) && now < new Date(market.closes_at);
+  if (now < new Date(market.opens_at)) return false;
+  // No closes_at means no scheduled close: open until someone reports a result.
+  return market.closes_at === null || now < new Date(market.closes_at);
 }
 
 export function isSettled(market: Market): boolean {
@@ -269,7 +277,7 @@ export function canSubmitOption(market: Market, now: Date = new Date()): boolean
   if (market.kind !== 'open' || isSettled(market)) return false;
   if (now < new Date(market.opens_at)) return false;
   const lock = market.options_lock_at ?? market.closes_at;
-  return now < new Date(lock);
+  return lock === null || now < new Date(lock);
 }
 
 // Resolutions cannot be proposed until the event is over and knowable.
@@ -281,5 +289,7 @@ export function canProposeResolution(
 ): boolean {
   if (isSettled(market)) return false;
   const knownAt = market.event_end_at ?? market.closes_at;
-  return now >= new Date(knownAt);
+  // Nothing to wait for on a standing bet - the "event" is only known once
+  // someone reports it.
+  return knownAt === null || now >= new Date(knownAt);
 }

@@ -34,7 +34,7 @@ export default function SignIn() {
         <p className="eyebrow">Private Prediction Market</p>
         <h1>Bets with your friends, kept between you.</h1>
         <p className="lede">
-          Join a circle with a code, put coins on what happens next, and settle up when it is
+          Join a circle with a code, put dollars on what happens next, and settle up when it is
           over. Nobody outside your circle sees a thing.
         </p>
         <button type="button" className="btn primary block" onClick={start} disabled={busy}>

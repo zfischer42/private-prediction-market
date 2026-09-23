@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { placeBet, projectedPayout, type Market } from '../../lib';
 import { useRunner } from '../../hooks';
-import { coins, percent } from '../../format';
+import { money, percent } from '../../format';
 import { useToast } from '../../ui';
 import type { OptionRow } from './types';
 
@@ -51,12 +51,12 @@ export default function BetPanel({
       return;
     }
     if (!validStake) {
-      toast('Enter a whole number of coins.', 'error');
+      toast('Enter a whole number of dollars.', 'error');
       return;
     }
     const res = await runner.run(() => placeBet(market.id, optionId, stake));
     if (res.error === undefined) {
-      toast(`Bet placed. You have ${coins(res.data)} left.`);
+      toast(`Bet placed. You have ${money(res.data)} left.`);
       setAmount('');
       onPlaced();
     }
@@ -66,7 +66,7 @@ export default function BetPanel({
     <form className="card stack" onSubmit={onSubmit}>
       <div className="spread">
         <h2>Place a bet</h2>
-        <span className="muted">You have {coins(balance)}</span>
+        <span className="muted">You have {money(balance)}</span>
       </div>
 
       <div className="chips" role="radiogroup" aria-label="Option">
@@ -86,7 +86,7 @@ export default function BetPanel({
       </div>
 
       <label className="field">
-        <span>Coins</span>
+        <span>Dollars</span>
         <input
           type="number"
           inputMode="numeric"
@@ -101,14 +101,14 @@ export default function BetPanel({
       <div className="chips">
         {QUICK_AMOUNTS.filter((q) => q <= balance).map((q) => (
           <button key={q} type="button" className="chip" onClick={() => setAmount(String(q))}>
-            {q}
+            ${q}
           </button>
         ))}
       </div>
 
       {chosen && estimate !== null && (
         <p className="hint">
-          If {chosen.label} wins you would collect about {coins(estimate)}
+          If {chosen.label} wins you would collect about {money(estimate)}
           {estimate === stake ? ' - nobody has bet against it yet, so that is just your stake back' : ''}.
           It moves as others bet.
         </p>

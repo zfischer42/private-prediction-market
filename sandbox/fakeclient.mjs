@@ -8,9 +8,22 @@ let currentUser = null;
 export function __bind(pglite) { db = pglite; }
 export function __setUser(id) { currentUser = id; }
 export function __getUser() { return currentUser; }
+// Lets the demo's fake Storage run its own SQL under the signed-in user's role, so RLS applies.
+export function __query(sql, params = []) { return asUser(sql, params); }
 
 // Run as the signed-in user so RLS actually applies. Superuser bypasses it.
-async function asUser(sql, params = []) {
+//
+// There is one connection, so calls are queued: an interleaved set-role / query /
+// reset-role would run one caller's query under another's role. The tests await one
+// call at a time, but the demo's UI fires several in parallel.
+let queue = Promise.resolve();
+function asUser(sql, params = []) {
+  const run = queue.then(() => asUserNow(sql, params));
+  queue = run.catch(() => {});
+  return run;
+}
+
+async function asUserNow(sql, params = []) {
   if (currentUser) {
     await db.exec(`set role authenticated;`);
     await db.query(`select set_config('request.jwt.claim.sub', $1, false)`, [currentUser]);
@@ -232,6 +245,8 @@ export function createClient() {
         upload: async () => ({ data: null, error: { message: 'storage not available in sandbox' } }),
         remove: async () => ({ data: null, error: null }),
         createSignedUrl: async () => ({ data: null, error: { message: 'storage not available in sandbox' } }),
+        createSignedUrls: async () => ({ data: null, error: { message: 'storage not available in sandbox' } }),
+        list: async () => ({ data: [], error: null }),
       }),
     },
   };

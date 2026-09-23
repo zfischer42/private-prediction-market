@@ -17,8 +17,10 @@ import {
   type Vote,
 } from '../../lib';
 import { useResource, useRunner } from '../../hooks';
-import { coins, when, type Tone } from '../../format';
-import { ConfirmButton, Pill } from '../../ui';
+import { money, when, type Tone } from '../../format';
+import { ConfirmButton, Pill, useToast } from '../../ui';
+import PhotoInput from './PhotoInput';
+import { MAX_PICK, uploadPhotos } from './photos';
 import type { NameOf, OptionRow } from './types';
 
 export default function ResolutionPanel({
@@ -29,6 +31,8 @@ export default function ResolutionPanel({
   isAdmin,
   bond,
   now,
+  photoRoom,
+  onPhotosChanged,
   onChanged,
 }: {
   market: Market;
@@ -38,6 +42,9 @@ export default function ResolutionPanel({
   isAdmin: boolean;
   bond: number;
   now: Date;
+  // How many more photos the market can take and how big each may be; null while unknown.
+  photoRoom: { remaining: number; maxBytes: number } | null;
+  onPhotosChanged: () => void;
   onChanged: () => void;
 }) {
   const proposals = useResource(() => getProposals(market.id), [market.id]);
@@ -70,7 +77,14 @@ export default function ResolutionPanel({
             myPending ? (
               <p className="hint">You have proposed a result. It is waiting for an admin to review it.</p>
             ) : (
-              <ProposeForm market={market} rows={rows} bond={bond} onDone={changed} />
+              <ProposeForm
+                market={market}
+                rows={rows}
+                bond={bond}
+                photoRoom={photoRoom}
+                onPhotosChanged={onPhotosChanged}
+                onDone={changed}
+              />
             )
           ) : (
             <p className="hint">
@@ -109,16 +123,23 @@ function ProposeForm({
   market,
   rows,
   bond,
+  photoRoom,
+  onPhotosChanged,
   onDone,
 }: {
   market: Market;
   rows: OptionRow[];
   bond: number;
+  photoRoom: { remaining: number; maxBytes: number } | null;
+  onPhotosChanged: () => void;
   onDone: () => void;
 }) {
+  const toast = useToast();
   const [optionId, setOptionId] = useState('');
   const [note, setNote] = useState('');
+  const [photos, setPhotos] = useState<File[]>([]);
   const runner = useRunner();
+  const photoSlots = photoRoom ? Math.min(MAX_PICK, photoRoom.remaining) : 0;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -126,11 +147,26 @@ function ProposeForm({
       () => proposeResolution(market.id, Number(optionId), note.trim() || undefined),
       'Result proposed',
     );
-    if (res.error === undefined) {
-      setOptionId('');
-      setNote('');
-      onDone();
+    if (res.error !== undefined) return;
+
+    // The proposal exists now; photos ride along afterwards, tagged to it. If they fail the
+    // proposal stands, and the photos can be added from the Photos section.
+    const attached = photos;
+    setOptionId('');
+    setNote('');
+    setPhotos([]);
+    if (attached.length > 0 && photoRoom) {
+      const up = await uploadPhotos(attached, {
+        marketId: market.id,
+        proposalId: res.data,
+        maxBytes: photoRoom.maxBytes,
+      });
+      if (up.error !== undefined) {
+        toast(`Result proposed, but ${up.added > 0 ? 'some photos' : 'the photos'} could not be added: ${up.error}`, 'error');
+      }
+      if (up.added > 0) onPhotosChanged();
     }
+    onDone();
   }
 
   return (
@@ -138,7 +174,7 @@ function ProposeForm({
       <p className="hint">
         Know how it ended? Propose the result for an admin to confirm.{' '}
         {bond > 0
-          ? `It costs a ${bond.toLocaleString()}-coin bond, returned if it is approved and lost if it turns out to be a false alarm.`
+          ? `It costs a ${money(bond)} bond, returned if it is approved and lost if it turns out to be a false alarm.`
           : 'There is no bond in this circle.'}{' '}
         Betting stays open meanwhile, but bets placed after a proposal on the winning side are
         refunded once it is approved.
@@ -163,6 +199,33 @@ function ProposeForm({
           placeholder="How do you know?"
         />
       </label>
+      {photoSlots > 0 && (
+        <div className="stack tight">
+          <div className="row">
+            <PhotoInput
+              max={photoSlots}
+              onPick={(files) => setPhotos((cur) => [...cur, ...files].slice(0, photoSlots))}
+            >
+              Attach photos
+            </PhotoInput>
+            <span className="hint">Optional, up to {photoSlots}. They are shrunk before they upload.</span>
+          </div>
+          {photos.length > 0 && (
+            <div className="chips">
+              {photos.map((file, i) => (
+                <button
+                  key={`${file.name}-${i}`}
+                  type="button"
+                  className="chip"
+                  onClick={() => setPhotos((cur) => cur.filter((_, j) => j !== i))}
+                >
+                  {file.name} (remove)
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <button className="btn primary" disabled={runner.busy || !optionId}>
         {runner.busy ? 'Proposing...' : 'Propose result'}
       </button>
@@ -235,7 +298,7 @@ function ProposalCard({
       </div>
       {proposal.note && <p className="note-text">{proposal.note}</p>}
       <p className="muted small">
-        {when(proposal.created_at)} - bond {coins(proposal.bond)}
+        {when(proposal.created_at)} - bond {money(proposal.bond)}
       </p>
 
       {pending && (

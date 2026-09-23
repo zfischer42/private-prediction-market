@@ -1,5 +1,5 @@
 import { supabase, currentUserId, rpc, read, type Result } from './supabase';
-import type { Comment, MarketEvidence, MediaType, Notification } from './types';
+import type { Comment, EvidenceUploadStatus, MarketEvidence, Notification } from './types';
 
 // Comments, evidence and notifications. These are the only tables the
 // browser is allowed to write to directly - everything else goes through
@@ -9,19 +9,20 @@ import type { Comment, MarketEvidence, MediaType, Notification } from './types';
 // Comments
 // ---------------------------------------------------------------------
 
-export function getComments(marketId: number): Promise<Result<Comment[]>> {
+// One running chat per circle - not tied to any one market.
+export function getComments(circleId: number): Promise<Result<Comment[]>> {
   return read(
     supabase
       .from('comments')
       .select('*')
-      .eq('market_id', marketId)
+      .eq('circle_id', circleId)
       .order('created_at'),
   );
 }
 
 // Posts a comment. Up to 1000 characters.
 export async function addComment(
-  marketId: number,
+  circleId: number,
   body: string,
 ): Promise<Result<Comment>> {
   const userId = await currentUserId();
@@ -29,7 +30,7 @@ export async function addComment(
   return read(
     supabase
       .from('comments')
-      .insert({ market_id: marketId, user_id: userId, body })
+      .insert({ circle_id: circleId, user_id: userId, body })
       .select()
       .single(),
   );
@@ -85,25 +86,47 @@ export function getEvidence(
   );
 }
 
-// Uploads a file and records it against the market.
+// Asks the database whether a photo can be added to this market right now, and what the
+// limits are: how many photos it has, how full the circle is, the largest file. Call it
+// before showing a picker, so a full market says so in a sentence up front.
+export function getEvidenceUploadStatus(
+  marketId: number,
+): Promise<Result<EvidenceUploadStatus>> {
+  return rpc('evidence_upload_status', { _market_id: marketId });
+}
+
+// Sentences for the ways Storage itself can turn a file away. These only show if someone
+// gets past the checks in uploadEvidence(), but a raw "mime type ... is not supported"
+// should not reach a screen either.
+function uploadMessage(message: string): string {
+  if (/maximum allowed size|payload too large|too large/i.test(message)) {
+    return 'That photo is too large.';
+  }
+  if (/mime type|not supported|invalid_mime_type/i.test(message)) {
+    return 'Only JPEG photos are accepted.';
+  }
+  if (/row-level security|unauthorized/i.test(message)) {
+    return 'That photo cannot be added right now. The market may have just filled up or settled.';
+  }
+  return message;
+}
+
+// Uploads a photo and records it against the market.
 //
-// The storage path must be exactly `<circle_id>/<market_id>/<uuid>.<ext>`
-// because the bucket's access rules parse the path to work out which
-// circle the file belongs to. Any other shape is rejected.
+// Photos only, and JPEG only: pass a picked file through preparePhoto() first, which
+// shrinks it well under the limit. Anything else is refused here with a sentence, and
+// by the bucket itself if someone bypasses this function.
 //
-// The circle id is looked up from the market rather than taken as an argument.
-// It used to be a parameter, which made "which circle?" a question the CALLER
-// had to get right about a file whose market already answers it - and getting
-// it wrong put the photo in a folder the market's own circle could not read,
-// while handing it to an unrelated circle. The storage policies now reject a
-// mismatch outright, so a wrong value is no longer silent, but it would surface
-// as a raw row-level-security error rather than a sentence. Deriving it removes
-// the question instead of validating the answer.
+// The storage path must be exactly `<circle_id>/<market_id>/<uuid>.jpg`, because the
+// bucket's access rules parse the path to work out which circle the file belongs to.
+// The circle id is looked up from the market rather than taken as an argument, so the
+// two cannot disagree (the storage policies reject a mismatch anyway).
 //
-// Both the upload and the row are blocked once the market has settled,
-// which keeps the proof behind a payout from being deleted after the fact.
+// The market's file count and the circle's storage are capped; getEvidenceUploadStatus()
+// says where things stand. Both the upload and the row are blocked once the market has
+// settled, which keeps the proof behind a payout from changing after the fact.
 export async function uploadEvidence(
-  file: File,
+  photo: Blob,
   opts: {
     marketId: number;
     proposalId?: number;
@@ -113,37 +136,32 @@ export async function uploadEvidence(
   const userId = await currentUserId();
   if (!userId) return { error: 'Not signed in' };
 
-  // media_type only allows 'image' or 'video'. Decide it from the MIME
-  // type and refuse anything else up front - defaulting a PDF to 'image'
-  // would satisfy the constraint while recording something untrue.
-  const mediaType: MediaType | null =
-    file.type.startsWith('video/') ? 'video'
-    : file.type.startsWith('image/') ? 'image'
-    : null;
-  if (!mediaType) {
-    return { error: `Evidence must be an image or a video (got "${file.type || 'unknown'}")` };
+  if (photo.type !== 'image/jpeg') {
+    return { error: 'Evidence must be a photo. Pick a picture and it is converted for you.' };
   }
 
-  // RLS hides markets in circles you are not in, so a missing row here is also
-  // the "not your circle" case - same as getMarket().
+  // Ask first, so "this market already has 6 photos" is a sentence rather than a policy
+  // error. RLS hides markets in circles you are not in, so a missing market reads as
+  // "Market not found" here - the "not your circle" case too.
+  const status = await getEvidenceUploadStatus(opts.marketId);
+  if (status.error !== undefined) return { error: status.error };
+  if (!status.data.allowed) {
+    return { error: status.data.reason ?? 'Photos cannot be added to this market.' };
+  }
+  if (photo.size > status.data.max_file_bytes) return { error: 'That photo is too large.' };
+
   const { data: market, error: marketError } = await read<{ circle_id: number } | null>(
     supabase.from('markets').select('circle_id').eq('id', opts.marketId).maybeSingle(),
   );
   if (marketError) return { error: marketError };
   if (!market) return { error: 'Market not found' };
 
-  // Only treat a trailing segment as an extension if the name actually has
-  // one - "photo".split('.').pop() returns "photo", not undefined, which
-  // would otherwise produce a path ending ".photo".
-  const dot = file.name.lastIndexOf('.');
-  const raw = dot > 0 ? file.name.slice(dot + 1).toLowerCase() : '';
-  const ext = /^[a-z0-9]{1,8}$/.test(raw) ? raw : 'bin';
-  const path = `${market.circle_id}/${opts.marketId}/${randomId()}.${ext}`;
+  const path = `${market.circle_id}/${opts.marketId}/${randomId()}.jpg`;
 
   const { error: uploadError } = await supabase.storage
     .from('evidence')
-    .upload(path, file, { contentType: file.type });
-  if (uploadError) return { error: uploadError.message };
+    .upload(path, photo, { contentType: 'image/jpeg' });
+  if (uploadError) return { error: uploadMessage(uploadError.message) };
 
   const result = await read<MarketEvidence>(
     supabase
@@ -153,7 +171,7 @@ export async function uploadEvidence(
         proposal_id: opts.proposalId ?? null,
         uploader_id: userId,
         storage_path: path,
-        media_type: mediaType,
+        media_type: 'image',
         caption: opts.caption ?? null,
       })
       .select()
@@ -178,7 +196,60 @@ export async function getEvidenceUrl(
   return { data: data.signedUrl };
 }
 
-// Retracts your own upload. Not allowed once the market has settled.
+// Signed URLs for a whole gallery in one round trip. A path that cannot be signed (the
+// file is gone, or you may not see it) is simply left out of the result.
+export async function getEvidenceUrls(
+  storagePaths: string[],
+  expiresInSeconds = 3600,
+): Promise<Result<Record<string, string>>> {
+  if (storagePaths.length === 0) return { data: {} };
+  const { data, error } = await supabase.storage
+    .from('evidence')
+    .createSignedUrls(storagePaths, expiresInSeconds);
+  if (error) return { error: error.message };
+  const urls: Record<string, string> = {};
+  for (const item of data) {
+    if (item.path && item.signedUrl) urls[item.path] = item.signedUrl;
+  }
+  return { data: urls };
+}
+
+// Deletes every photo on a market, files and rows. Only its creator or a circle admin may,
+// and only while it is unsettled.
+//
+// Call this BEFORE cancelMarket(). Once the market row is gone nobody is allowed to delete
+// its files, so they would sit in the bucket unreachable and still counting against the
+// quota - and deleting them with SQL does not free the space either (Supabase leaves the
+// object behind). The rows go first, the way deleteEvidence() does it: a stray file is a
+// cheaper mistake than a row that points at nothing. Files are found by listing the folder
+// as well as from the rows, so one whose row never got written is not missed.
+export async function removeMarketFiles(marketId: number): Promise<Result<null>> {
+  const { data: market, error: marketError } = await read<{ circle_id: number } | null>(
+    supabase.from('markets').select('circle_id').eq('id', marketId).maybeSingle(),
+  );
+  if (marketError) return { error: marketError };
+  if (!market) return { error: 'Market not found' };
+
+  const rows = await read<MarketEvidence[]>(
+    supabase.from('market_evidence').delete().eq('market_id', marketId).select(),
+  );
+  if (rows.error !== undefined) return { error: rows.error };
+
+  const folder = `${market.circle_id}/${marketId}`;
+  const listed = await supabase.storage.from('evidence').list(folder, { limit: 100 });
+  const paths = new Set(rows.data.map((row) => row.storage_path));
+  for (const file of listed.data ?? []) {
+    if (file.id) paths.add(`${folder}/${file.name}`);
+  }
+  if (paths.size === 0) return { data: null };
+
+  const { error } = await supabase.storage.from('evidence').remove([...paths]);
+  if (error) return { error: error.message };
+  return { data: null };
+}
+
+// Deletes one photo: your own, or any on a market you created or administer. Once the market
+// has settled, only a circle admin, and only 30 days later.
 //
 // Same .select() reasoning as deleteComment: without it, an upload that
 // RLS refused to delete would report success and we would then delete the
@@ -199,7 +270,7 @@ export async function deleteEvidence(
   );
   if (error) return { error };
   if (!data?.length) {
-    return { error: 'That evidence is not yours to delete, or the market has settled' };
+    return { error: 'That photo cannot be deleted by you, or the market has settled' };
   }
   const { error: removeError } = await supabase.storage
     .from('evidence')

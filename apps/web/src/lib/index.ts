@@ -3,7 +3,7 @@
 //   import { placeBet, getOdds, onAuthChange } from './lib';
 //
 // Every call returns { data } or { error }, where error is a message
-// already fit to show a user ("Not enough coins", "Betting has closed").
+// already fit to show a user ("Not enough dollars", "Betting has closed").
 // Permission and money rules are enforced in the database, so a hidden
 // button is a courtesy, not a security boundary - and a call that should
 // not be allowed will come back as an error rather than going through.
@@ -92,19 +92,24 @@ export {
   addComment,
   deleteComment,
   getEvidence,
+  getEvidenceUploadStatus,
   uploadEvidence,
   getEvidenceUrl,
+  getEvidenceUrls,
+  removeMarketFiles,
   deleteEvidence,
   getNotifications,
   markNotificationRead,
   markAllNotificationsRead,
 } from './social';
 
+export { preparePhoto } from './image';
+
 export {
   onMarketBets,
   onMarketChange,
   onCircleMarkets,
-  onMarketComments,
+  onCircleComments,
   onProposalVotes,
   type Change,
   type SubscribeOptions,

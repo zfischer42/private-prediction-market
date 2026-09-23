@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { createCircle, getMyCircles, joinCircle } from '../lib';
 import { useResource, useRunner } from '../hooks';
 import { Link, navigate } from '../router';
-import { coins } from '../format';
+import { money } from '../format';
 import { Empty, ErrorNote, Loading, Pill } from '../ui';
 
 export default function Circles() {
@@ -46,7 +46,7 @@ export default function Circles() {
                 <strong>{row.circle.name}</strong>
                 {row.role === 'admin' && <Pill tone="accent">Admin</Pill>}
               </div>
-              <p className="muted">{coins(row.balance)}</p>
+              <p className="muted">{money(row.balance)}</p>
             </Link>
           </li>
         ))}

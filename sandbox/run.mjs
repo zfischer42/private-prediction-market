@@ -185,7 +185,7 @@ check('projectedPayout matches the pool split',
       lib.projectedPayout(100, 100, 300) === 300);
 
 as('bob');
-expectErr('placeBet blocks overspending', await lib.placeBet(mktId, yes.id, 99999), 'Not enough coins');
+expectErr('placeBet blocks overspending', await lib.placeBet(mktId, yes.id, 99999), 'Not enough dollars');
 expectErr('placeBet rejects a negative stake', await lib.placeBet(mktId, yes.id, -50), 'must be positive');
 expectErr('placeBet rejects an option from another market',
   await lib.placeBet(mktId, multiOpts[0].id, 10), 'does not belong');
@@ -245,7 +245,7 @@ as('bob');
 const balBefore = (await lib.getMyMembership(circleId)).data.balance;
 const propId = ok('proposeResolution', await lib.proposeResolution(resId, resYes.id, 'It finished'));
 const balAfterBond = (await lib.getMyMembership(circleId)).data.balance;
-check('proposing deducts the 50-coin bond', balBefore - balAfterBond === 50,
+check('proposing deducts the 50-dollar bond', balBefore - balAfterBond === 50,
       `${balBefore} -> ${balAfterBond}`);
 
 const props = ok('getProposals', await lib.getProposals(resId));
@@ -343,11 +343,11 @@ check('rename applied', (await lib.getMyMembership(circleId)).data.display_name 
 // =====================================================================
 section('Comments & notifications');
 as('bob');
-const comment = ok('addComment', await lib.addComment(mktId, 'easy money'));
-const comments = ok('getComments', await lib.getComments(mktId));
+const comment = ok('addComment', await lib.addComment(circleId, 'easy money'));
+const comments = ok('getComments', await lib.getComments(circleId));
 check('comment is readable', comments?.[0]?.body === 'easy money');
 ok('deleteComment', await lib.deleteComment(comment.id));
-check('comment removed', (await lib.getComments(mktId)).data.length === 0);
+check('comment removed', (await lib.getComments(circleId)).data.length === 0);
 
 const notes = ok('getNotifications', await lib.getNotifications());
 check('getNotifications returns an array', Array.isArray(notes), typeof notes);
@@ -493,11 +493,11 @@ check('canSubmitOption true for a live open market',
       lib.canSubmitOption((await lib.getMarket(openId.data)).data) === true);
 
 // deleting what is not yours must report failure, not silent success
-const c2 = must('bob comments', await lib.addComment(mktId, 'mine'));
+const c2 = must('bob comments', await lib.addComment(circleId, 'mine'));
 as('carol');
 expectErr('deleting another user\'s comment reports failure',
   await lib.deleteComment(c2.id), 'not yours');
-check('the comment survived', (await lib.getComments(mktId)).data.length === 1);
+check('the comment survived', (await lib.getComments(circleId)).data.length === 1);
 as('bob');
 ok('deleting your own comment works', await lib.deleteComment(c2.id));
 
@@ -568,8 +568,8 @@ for (const [label, res] of [
   ['createMarket long question', await lib.createMarket({
       circleId, question: long(301), kind: 'binary', closesAt: soon })],
   ['submitOption too long',     await lib.submitOption(openId.data, long(101))],
-  ['addComment too long',       await lib.addComment(mktId, long(1001))],
-  ['addComment empty',          await lib.addComment(mktId, '')],
+  ['addComment too long',       await lib.addComment(circleId, long(1001))],
+  ['addComment empty',          await lib.addComment(circleId, '')],
   ['setCircleSettings balance 0',  await lib.setCircleSettings(circleId, { startingBalance: 0 })],
   ['setCircleSettings bond -1',    await lib.setCircleSettings(circleId, { proposalBond: -1 })],
 ]) {
@@ -656,8 +656,8 @@ check('read() translates a network failure',
       }))).error);
 check('read() leaves a real server error alone',
       (await lib.read(Promise.resolve({
-        data: null, status: 400, error: { message: 'Not enough coins' },
-      }))).error === 'Not enough coins');
+        data: null, status: 400, error: { message: 'Not enough dollars' },
+      }))).error === 'Not enough dollars');
 check('read() passes data through untouched',
       (await lib.read(Promise.resolve({ data: [1, 2], status: 200, error: null })))
         .data.length === 2);
@@ -665,22 +665,28 @@ check('read() passes data through untouched',
 // uploadEvidence derives the circle from the market rather than trusting the
 // caller, so a market you cannot see is a clean sentence, not a storage error
 expectErr('uploadEvidence on a market RLS hides',
-  await lib.uploadEvidence(new File(['x'], 'p.png', { type: 'image/png' }), { marketId: 999999 }),
+  await lib.uploadEvidence(new File(['x'], 'p.jpg', { type: 'image/jpeg' }), { marketId: 999999 }),
   'Market not found');
 
-// uploadEvidence must reject a non-image/video before touching storage
+// evidence is photos only, and only JPEG: a PDF, or a PNG that skipped preparePhoto(),
+// is refused with a sentence before anything reaches storage
 const pdf = new File(['x'], 'receipt.pdf', { type: 'application/pdf' });
 expectErr('uploadEvidence refuses a PDF',
   await lib.uploadEvidence(pdf, { marketId: mktId }),
-  'must be an image or a video');
+  'must be a photo');
+expectErr('uploadEvidence refuses a PNG that was not prepared',
+  await lib.uploadEvidence(new File(['x'], 'p.png', { type: 'image/png' }), { marketId: mktId }),
+  'must be a photo');
 
 // and must not throw when crypto.randomUUID is unavailable, which is the
 // case over plain http - i.e. testing the PWA on a phone via a LAN address
+const upMkt = must('a market with room for photos', await lib.createMarket({
+  circleId, question: 'Upload test market', kind: 'binary', closesAt: new Date(Date.now() + 86_400_000) }));
 const realUUID = crypto.randomUUID;
 delete crypto.randomUUID;
 try {
-  const png = new File(['x'], 'proof.png', { type: 'image/png' });
-  const r = await lib.uploadEvidence(png, { marketId: mktId });
+  const jpg = new File(['x'], 'proof.jpg', { type: 'image/jpeg' });
+  const r = await lib.uploadEvidence(jpg, { marketId: upMkt });
   check('uploadEvidence survives no crypto.randomUUID',
         r.error === 'storage not available in sandbox',
         `got "${r.error}" (should have reached the storage call)`);
@@ -889,6 +895,299 @@ for (const p of evPolicies) {
     body.includes('market_circle') && body.includes('evidence_circle_id'),
     body);
 }
+
+// =====================================================================
+section('v6 evidence limits');
+//
+// Storage itself is stubbed, so file SIZE and TYPE cannot be tested here - those are
+// bucket settings enforced by Supabase Storage (see the smoke test in BACKEND.md).
+// What CAN be tested is everything the database decides: the per-market file cap, the
+// per-circle and whole-bucket byte caps, and who may delete what. Files are inserted
+// into storage.objects through the `authenticated` role, so the real policies run.
+
+// Runs one statement as a signed-in user, with RLS on. Returns { rows } or { error }.
+async function sqlAs(userId, sql, params = []) {
+  await db.exec('set role authenticated;');
+  await db.query(`select set_config('request.jwt.claim.sub', $1, false)`, [userId]);
+  try { return { rows: (await db.query(sql, params)).rows }; }
+  catch (e) { return { error: e.message }; }
+  finally { await db.exec('reset role;'); }
+}
+let fileSeq = 0;
+// pad='00' gives '005/0012/x.jpg', which the policies read as circle 5, market 12.
+const fpath = (c, m, pad = '') => `${pad}${c}/${pad}${m}/f${++fileSeq}.jpg`;
+const put = (uid, c, m, pad = '', size = 1000) => sqlAs(uid,
+  `insert into storage.objects (bucket_id, name, owner, metadata)
+   values ('evidence', $1, $2, jsonb_build_object('size', $3::bigint)) returning name`,
+  [fpath(c, m, pad), uid, size]);
+const status = async (uid, marketId) =>
+  (await sqlAs(uid, `select public.evidence_upload_status($1) as s`, [marketId]));
+const inTheFuture = () => new Date(Date.now() + 86_400_000);
+
+// the limits, in one place
+const lim = (await db.query(`select * from public.evidence_limits()`)).rows[0];
+check('evidence_limits(): 2 MiB, 6 files, 100 MiB per circle, 800 MiB total, 30 days',
+  lim.max_file_bytes === 2097152 && lim.max_files_per_market === 6
+  && Number(lim.max_circle_bytes) === 104857600 && Number(lim.max_total_bytes) === 838860800
+  && lim.purge_after_days === 30, JSON.stringify(lim));
+
+// the bucket is what Storage enforces size and type against
+const bucketNow = async () =>
+  (await db.query(`select file_size_limit, allowed_mime_types from storage.buckets where id = 'evidence'`)).rows[0];
+let bkt = await bucketNow();
+check('the evidence bucket is limited to 2 MiB JPEGs',
+  Number(bkt.file_size_limit) === 2097152 && bkt.allowed_mime_types?.join() === 'image/jpeg', JSON.stringify(bkt));
+
+// v5 inserted the bucket with `on conflict do nothing`, so a re-run never tightened an
+// existing one. Loosen it, run the whole schema again, and it must be tight again.
+await db.query(`update storage.buckets set file_size_limit = null, allowed_mime_types = null where id = 'evidence'`);
+await db.exec(readFileSync(ROOT + '/supabase/migrations/0001_initial.sql', 'utf8'));
+bkt = await bucketNow();
+check('re-running the schema tightens an existing, unlimited bucket',
+  Number(bkt.file_size_limit) === 2097152 && bkt.allowed_mime_types?.join() === 'image/jpeg', JSON.stringify(bkt));
+
+// ---- a circle to work in: alice creates and administers, bob is a member,
+//      carol is (for now) an outsider
+as('alice');
+const evC = must('evidence circle', await lib.createCircle('Evidence limits circle'));
+const evCode = must('evidence circle code', await lib.getCircle(evC)).join_code;
+as('bob');   must('bob joins', await lib.joinCircle(evCode));
+const evMk = async (who = 'alice') => { as(who); return must('evidence market', await lib.createMarket({
+  circleId: evC, question: 'Evidence test market', kind: 'binary', closesAt: inTheFuture() })); };
+const E1 = await evMk(), E2 = await evMk(), E3 = await evMk();
+
+// ---- who may upload
+let st = (await status(users.bob, E1)).rows[0].s;
+check('status: a member may upload to an open market', st.allowed === true && st.reason === null && st.files === 0
+  && st.max_files === 6 && st.max_file_bytes === 2097152, JSON.stringify(st));
+const outsider = await status(users.carol, E1);
+check('status: a market you cannot see reads "Market not found"',
+  outsider.error?.includes('Market not found'), outsider.error);
+const outsiderPut = await put(users.carol, evC, E1);
+check('an outsider cannot upload (RLS refuses)', outsiderPut.error?.includes('row-level security'), outsiderPut.error);
+const okPut = await put(users.bob, evC, E1);
+check('a member can upload to an open market', !okPut.error, okPut.error);
+
+// ---- per-market file cap (6). One is in; add five more through a mix of plain and
+//      zero-padded paths - both must count toward the same market.
+for (let i = 0; i < 4; i++) must(`file ${i + 2}`, await put(users.bob, evC, E1));
+must('file 6, zero-padded path', await put(users.bob, evC, E1, '00'));
+st = (await status(users.bob, E1)).rows[0].s;
+check('status: six files means the market is full',
+  st.allowed === false && st.files === 6 && st.reason === 'This market already has 6 photos', JSON.stringify(st));
+const seventh = await put(users.bob, evC, E1);
+check('the 7th file on a market is refused', seventh.error?.includes('row-level security'), seventh.error);
+const seventhPadded = await put(users.bob, evC, E1, '000');
+check('...including by zero-padding the path to dodge the count',
+  seventhPadded.error?.includes('row-level security'), seventhPadded.error);
+check('another market in the same circle is unaffected', !(await put(users.bob, evC, E2)).error);
+
+// ---- per-circle byte cap (100 MiB). The last upload can overshoot, so put the circle AT
+//      the cap with one stored file, then the next is refused.
+await db.query(`insert into storage.objects (bucket_id, name, owner, metadata)
+  values ('evidence', $1, $2, jsonb_build_object('size', $3::bigint))`,
+  [fpath(evC, E3), users.bob, Number(lim.max_circle_bytes)]);
+st = (await status(users.bob, E3)).rows[0].s;
+check('status: a circle at its byte cap is full',
+  st.allowed === false && st.reason === "This circle's photo storage is full"
+  && Number(st.circle_bytes) >= Number(lim.max_circle_bytes), JSON.stringify(st));
+const fullCircle = await put(users.bob, evC, E3);
+check('an upload into a full circle is refused', fullCircle.error?.includes('row-level security'), fullCircle.error);
+await db.query(`delete from storage.objects where bucket_id = 'evidence' and (metadata->>'size')::bigint >= $1`,
+  [Number(lim.max_circle_bytes)]);
+
+// ---- whole-bucket cap (800 MiB), seen from a different, nearly empty circle
+as('bob');
+const evC2 = must('second circle', await lib.createCircle('Bob small circle'));
+const evOther = must('other market', await lib.createMarket({
+  circleId: evC2, question: 'Another circle', kind: 'binary', closesAt: inTheFuture() }));
+check('a nearly empty circle can upload', !(await put(users.bob, evC2, evOther)).error);
+await db.query(`insert into storage.objects (bucket_id, name, owner, metadata)
+  values ('evidence', $1, $2, jsonb_build_object('size', $3::bigint))`,
+  [fpath(evC, E3), users.alice, Number(lim.max_total_bytes)]);
+st = (await status(users.bob, evOther)).rows[0].s;
+check('status: the whole bucket at its cap is full for every circle',
+  st.allowed === false && st.reason === 'Photo storage is full for now', JSON.stringify(st));
+check('...and uploads anywhere are refused',
+  (await put(users.bob, evC2, evOther)).error?.includes('row-level security'));
+await db.query(`delete from storage.objects where bucket_id = 'evidence' and (metadata->>'size')::bigint >= $1`,
+  [Number(lim.max_total_bytes)]);
+check('once space is freed, uploads work again', !(await put(users.bob, evC2, evOther)).error);
+
+// ---- deleting, while the market is unsettled
+as('carol'); must('carol joins as a plain member', await lib.joinCircle(evCode));
+const del = (uid, name) => sqlAs(uid, `delete from storage.objects where bucket_id = 'evidence' and name = $1 returning name`, [name]);
+const bobFile = (await put(users.bob, evC, E2)).rows[0].name;
+check('a plain member cannot delete someone else\'s file', (await del(users.carol, bobFile)).rows.length === 0);
+check('the uploader can delete their own file', (await del(users.bob, bobFile)).rows.length === 1);
+const bobFile2 = (await put(users.bob, evC, E2)).rows[0].name;
+check('the market creator (also admin) can delete a member\'s file', (await del(users.alice, bobFile2)).rows.length === 1);
+
+// ---- why files have to go BEFORE cancel_market
+const E4 = await evMk();
+const beforeCancel = (await put(users.bob, evC, E4)).rows[0].name;
+as('alice'); must('cancel market', await lib.cancelMarket(E4));
+check('after cancel_market its files are unreachable: nobody can delete them (so the app removes them first)',
+  (await del(users.alice, beforeCancel)).rows.length === 0);
+await db.query(`delete from storage.objects where name = $1`, [beforeCancel]);   // tidy the test data
+
+// ---- settled evidence: frozen, then purgeable by an admin after 30 days
+const E5 = await evMk();
+const keep = (await put(users.bob, evC, E5)).rows[0].name;
+const rowIns = async (name) => (await sqlAs(users.bob,
+  `insert into public.market_evidence (market_id, uploader_id, storage_path, media_type)
+   values ($1, $2, $3, 'image') returning id`, [E5, users.bob, name]));
+const evRowId = (await rowIns(keep)).rows[0].id;
+const optE5 = must('E5 options', await lib.getOptions(E5))[0].id;
+as('alice'); must('settle E5', await lib.resolveMarket(E5, optE5));
+check('a settled market takes no new files', (await put(users.bob, evC, E5)).error?.includes('row-level security'));
+check('...and its uploader cannot delete their file', (await del(users.bob, keep)).rows.length === 0);
+check('...and even an admin cannot, inside the 30 days', (await del(users.alice, keep)).rows.length === 0);
+check('...nor delete its evidence row', (await sqlAs(users.alice,
+  `delete from public.market_evidence where id = $1 returning id`, [evRowId])).rows.length === 0);
+let frozen;
+try { await db.query(`update public.market_evidence set caption = 'edited' where id = $1`, [evRowId]); frozen = 'no error'; }
+catch (e) { frozen = e.message; }
+check('the guard still freezes edits to settled evidence', /frozen/.test(frozen), frozen);
+
+// backdate the settlement by 31 days (break-glass: the guard blocks any update of a settled market)
+await db.exec(`alter table public.markets disable trigger markets_terminal_guard`);
+await db.query(`update public.markets set resolved_at = now() - interval '31 days' where id = $1`, [E5]);
+await db.exec(`alter table public.markets enable trigger markets_terminal_guard`);
+check('31 days on, a plain member (the uploader) still cannot delete it', (await del(users.bob, keep)).rows.length === 0);
+check('...but a circle admin can delete the file',  (await del(users.alice, keep)).rows.length === 1);
+check('...and the evidence row goes with it, past the guard', (await sqlAs(users.alice,
+  `delete from public.market_evidence where id = $1 returning id`, [evRowId])).rows.length === 1);
+let stillFrozen;
+try { await db.query(`insert into public.market_evidence (market_id, uploader_id, storage_path, media_type)
+  values ($1, $2, 'x/y/z.jpg', 'image')`, [E5, users.bob]); stillFrozen = 'no error'; }
+catch (e) { stillFrozen = e.message; }
+check('...but settled evidence still cannot be ADDED, even after 30 days', /frozen/.test(stillFrozen), stillFrozen);
+
+// ---- the surface: who can call what
+const anonCall = await (async () => {
+  await db.exec('set role anon;');
+  try { await db.query(`select public.evidence_upload_status(1)`); return 'callable'; }
+  catch (e) { return e.message; } finally { await db.exec('reset role;'); }
+})();
+check('anon cannot call evidence_upload_status', /permission denied/.test(anonCall), anonCall);
+const counterCall = await sqlAs(users.bob, `select public.evidence_total_bytes()`);
+check('the internal counters are not callable from the client', /permission denied/.test(counterCall.error ?? ''), counterCall.error);
+
+
+// ---- the same rules, through the lib -------------------------------------
+const jpegOf = (bytes) => new File([new Uint8Array(bytes)], 'p.jpg', { type: 'image/jpeg' });
+as('bob');
+const libSt = await lib.getEvidenceUploadStatus(E2);
+check('getEvidenceUploadStatus reports the limits the database enforces',
+  libSt.data?.allowed === true && libSt.data.max_files === 6 && libSt.data.max_file_bytes === 2097152
+  && libSt.data.purge_after_days === 30, JSON.stringify(libSt));
+as('alice');
+expectErr('getEvidenceUploadStatus: a market in a circle you are not in',
+  await lib.getEvidenceUploadStatus(evOther), 'Market not found');
+as('bob');
+expectErr('uploadEvidence: a market that is already full says so, in a sentence',
+  await lib.uploadEvidence(jpegOf(10), { marketId: E1 }), 'This market already has 6 photos');
+expectErr('uploadEvidence: a photo over the size limit is refused before storage',
+  await lib.uploadEvidence(jpegOf(2 * 1024 * 1024 + 1), { marketId: E2 }), 'too large');
+expectErr('uploadEvidence: a settled market takes no photos',
+  await lib.uploadEvidence(jpegOf(10), { marketId: E5 }), 'has settled');
+const reached = await lib.uploadEvidence(jpegOf(1000), { marketId: E2 });
+check('uploadEvidence: a normal photo gets as far as storage',
+  reached.error === 'storage not available in sandbox', reached.error);
+check('preparePhoto explains itself outside a browser',
+  (await lib.preparePhoto(new Blob(['x'], { type: 'image/jpeg' }), 2_000_000)).error?.includes('browser'));
+check('getEvidenceUrls with nothing to sign is an empty map',
+  JSON.stringify((await lib.getEvidenceUrls([])).data) === '{}');
+
+// removeMarketFiles: the creator clears a market; a plain member's call removes only their own
+const seedRow = (uid, mkt) => sqlAs(uid,
+  `insert into public.market_evidence (market_id, uploader_id, storage_path, media_type)
+   values ($1, $2, $3, 'image') returning id`, [mkt, uid, fpath(evC, mkt)]);
+await seedRow(users.bob, E2); await seedRow(users.bob, E2); await seedRow(users.carol, E2);
+const rowCount = async (mkt) => (await db.query(
+  `select count(*)::int n from public.market_evidence where market_id = $1`, [mkt])).rows[0].n;
+as('carol');
+must('carol (a plain member) runs removeMarketFiles', await lib.removeMarketFiles(E2));
+check('removeMarketFiles by a plain member removes only their own rows', (await rowCount(E2)) === 2);
+as('alice');
+must('alice (creator and admin) runs removeMarketFiles', await lib.removeMarketFiles(E2));
+check('removeMarketFiles by the market creator removes them all', (await rowCount(E2)) === 0);
+expectErr('removeMarketFiles on a market you cannot see', await lib.removeMarketFiles(evOther), 'Market not found');
+
+
+// =====================================================================
+section('v7 standing markets (no closes_at)');
+//
+// "Next person to blackout" has nothing to schedule: nobody knows when it will
+// happen. closesAt is now optional - omitting it means betting never
+// auto-closes, and a result can be proposed the moment it actually happens,
+// with no minimum wait.
+
+// ---- the pure timing helpers, checked directly against constructed markets.
+//      No network involved, so this is where the null-handling itself is proven.
+const baseMarket = {
+  status: 'open', kind: 'binary', line: null, options_lock_at: null,
+  event_end_at: null, review_started_at: null,
+};
+const hoursAgo = (h) => new Date(Date.now() - h * 3_600_000).toISOString();
+const hoursFromNow = (h) => new Date(Date.now() + h * 3_600_000).toISOString();
+
+check('isBettingOpen: true forever once opened, when closes_at is null',
+  lib.isBettingOpen({ ...baseMarket, opens_at: hoursAgo(1), closes_at: null }));
+check('isBettingOpen: still false before opens_at, even with no closes_at',
+  !lib.isBettingOpen({ ...baseMarket, opens_at: hoursFromNow(1), closes_at: null }));
+check('isBettingOpen: false once settled, regardless of closes_at',
+  !lib.isBettingOpen({ ...baseMarket, status: 'resolved', opens_at: hoursAgo(1), closes_at: null }));
+
+check('canProposeResolution: true immediately when there is nothing to wait for',
+  lib.canProposeResolution({ ...baseMarket, opens_at: hoursAgo(1), closes_at: null }));
+check('canProposeResolution: an explicit eventEndAt still gates a standing market',
+  !lib.canProposeResolution({ ...baseMarket, opens_at: hoursAgo(1), closes_at: null, event_end_at: hoursFromNow(1) }));
+
+check('canSubmitOption: open kind, no closes_at and no derived lock -> always open',
+  lib.canSubmitOption({ ...baseMarket, kind: 'open', opens_at: hoursAgo(1), closes_at: null }));
+check('canSubmitOption: still respects an explicit options_lock_at',
+  !lib.canSubmitOption({ ...baseMarket, kind: 'open', opens_at: hoursAgo(1), closes_at: null, options_lock_at: hoursAgo(1) }));
+
+// ---- the real thing: create, bet, add an option, propose - all with no closes_at
+const standingId = must('create a market with no end date',
+  await lib.createMarket({ circleId, question: 'Next person to blackout', kind: 'open' }));
+const standing = must('read it back', await lib.getMarket(standingId));
+check('closes_at is really null in the database, not just unset client-side',
+  standing.closes_at === null, standing.closes_at);
+check('options_lock_at is null too - nothing derived from a close time that does not exist',
+  standing.options_lock_at === null);
+
+must('submit_option works with no lock to respect',
+  await lib.submitOption(standingId, 'Bob'));
+const bobOptId = must('submit_option (Zach)', await lib.submitOption(standingId, 'Zach'));
+must('betting has no upper bound', await lib.placeBet(standingId, bobOptId, 20));
+
+// propose_resolution the same second the market was created - no minimum wait
+const standingProposalId = must('propose a result seconds after creation, with no minimum wait',
+  await lib.proposeResolution(standingId, bobOptId, 'Zach went down at the after-party'));
+check('the quarantine line was still drawn like any other proposal',
+  (await lib.getMarket(standingId)).review_started_at !== null);
+
+// reject_close on a standing market: least(NULL, now()) returns now() (LEAST
+// ignores a null argument), so this closes betting at the current moment even
+// though there was never a scheduled close to pull forward.
+as('alice');
+must('reject_close on a standing market', await lib.reviewProposal(standingProposalId, 'reject_close'));
+const closedStanding = must('read it back after reject_close', await lib.getMarket(standingId));
+check('reject_close gave it a real closes_at (now), not null forever',
+  closedStanding.closes_at !== null);
+check('...specifically in the past, so betting is actually shut',
+  new Date(closedStanding.closes_at) <= new Date());
+check('...and status reflects that', closedStanding.status === 'closed');
+check('a bet no longer goes through',
+  (await lib.placeBet(standingId, bobOptId, 5)).error === 'Betting has closed');
+
+as('bob');
+check('drift is still 0 after every v7 scenario',
+  (await db.query(`select count(*)::int n from public.circle_reconciliation where drift <> 0`)).rows[0].n === 0);
+
 
 // ---- the invariant that outranks all of them ------------------------
 check('drift is still 0 after every v5 scenario',

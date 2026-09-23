@@ -120,13 +120,13 @@ export function onCircleMarkets(
   return subscribe('markets', `circle_id=eq.${circleId}`, callback, opts);
 }
 
-// New trash talk on a market.
-export function onMarketComments(
-  marketId: number,
+// New message in the circle's chat.
+export function onCircleComments(
+  circleId: number,
   callback: (change: Change<Comment>) => void,
   opts?: SubscribeOptions,
 ): () => void {
-  return subscribe('comments', `market_id=eq.${marketId}`, callback, opts);
+  return subscribe('comments', `circle_id=eq.${circleId}`, callback, opts);
 }
 
 // Someone voted on a resolution proposal. Refetch getVoteTally().

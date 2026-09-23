@@ -1,9 +1,58 @@
 -- =====================================================================
--- PRIVATE PREDICTION MARKET - FULL SCHEMA  v5
+-- PRIVATE PREDICTION MARKET - FULL SCHEMA  v9
 -- Postgres / Supabase
 --
 -- Run top to bottom in the Supabase SQL Editor. Copy-paste ready.
 -- Look for "SELF-TEST PASSED" in the output; it raises loudly on failure.
+--
+-- v9 moves comments off individual markets. "Trash talk" living on one bet's
+-- page never fit anything that wasn't about that bet - a circle is a standing
+-- group of friends, so it gets one running chat, not N disconnected ones.
+-- comments.market_id becomes circle_id; old rows are backfilled from the
+-- market they pointed at, so nothing is lost, only reattached one level up.
+--
+-- v8 renames the unit shown to a user from "coins" to "dollars" - there was
+-- never a real-money transaction anywhere in this app, but the UI called the
+-- balance a coin count while everywhere else on screen now reads like money.
+-- Nothing economic changes: place_bet() and propose_resolution() only had
+-- their two error strings reworded. coin_ledger, admin_adjust_coins() and
+-- every other internal identifier keep their names - renaming a live table
+-- or a callable RPC is a real migration with its own risk, and nothing
+-- outside this file ever shows those names to a user.
+--
+-- v7 makes closes_at optional. A market like "who blacks out first" has
+-- nothing to schedule -- nobody knows when it will happen -- so requiring a
+-- close time meant picking an arbitrary one, which then blocked
+-- propose_resolution() until THAT date too (event_end_at can never be earlier
+-- than closes_at). With closes_at left blank, betting simply never
+-- auto-closes on its own, and anyone can propose a result the moment the
+-- thing actually happens.
+--
+-- The rest of the server needed no changes. Every comparison against
+-- closes_at already either guards with "is not null" or leans on Postgres
+-- treating a NULL comparison as not-true -- which is exactly "skip this
+-- check". reject_close's `least(closes_at, now())` even does the right thing
+-- by accident, since LEAST() ignores a null argument and returns the other
+-- one. The one real change is the column itself.
+--
+-- v6 puts a ceiling on evidence storage. The bucket had no limit at all: any
+-- circle member could push files of any type, up to Supabase's own per-file cap,
+-- straight at the Storage API, so about twenty uploads filled a free project's
+-- whole 1 GB.
+--
+--   1. The bucket now takes JPEG only, 2 MB a file (enforced by Storage itself).
+--      Its insert used `on conflict do nothing`; it is now an upsert, so a re-run
+--      tightens an existing bucket instead of leaving it wide open.
+--   2. evidence_upload refuses a 7th file on a market, a circle past 100 MB and a
+--      bucket past 800 MB. The numbers live in evidence_limits(), which the UI
+--      reads through evidence_upload_status(), so the limit shown to a person is
+--      the limit enforced. The byte caps are soft: a file's size is unknown until
+--      its upload finishes, so the last upload can overshoot by about one file.
+--   3. A market's creator or a circle admin can delete its files while it is
+--      unsettled (needed to clean up before cancel_market, which cannot: SQL
+--      deletes orphan Storage files). Settled evidence stays frozen, except that
+--      a circle admin can delete it 30 days after settlement, so a circle that
+--      fills its quota can always free space.
 --
 -- v5 closes four ways a market could take someone's coins and give nothing
 -- back, or refuse an action with a nonsense error:
@@ -167,7 +216,8 @@ create table if not exists public.markets (
   image_url         text,
   subject_id        uuid        references auth.users(id) on delete set null,
   opens_at          timestamptz not null default now(),
-  closes_at         timestamptz not null,
+  -- v7: nullable. NULL means no scheduled close -- see the v7 note above.
+  closes_at         timestamptz,
   event_start_at    timestamptz,
   event_end_at      timestamptz,
   options_lock_at   timestamptz,
@@ -186,6 +236,12 @@ create index if not exists markets_timeline
   on public.markets (circle_id, status, closes_at desc);
 create index if not exists markets_lifecycle
   on public.markets (status, opens_at, closes_at);
+
+-- v7: loosen a column that pre-v7 installs still have NOT NULL on. The CHECK
+-- constraint below needs no equivalent change -- `closes_at > opens_at` is
+-- satisfied (not violated) when closes_at is NULL, because Postgres treats an
+-- unknown CHECK result as a pass, not a failure.
+alter table public.markets alter column closes_at drop not null;
 
 -- ---------------------------------------------------------------------
 -- 1.5 Options
@@ -311,12 +367,31 @@ create index if not exists ledger_market on public.coin_ledger (market_id);
 -- ---------------------------------------------------------------------
 create table if not exists public.comments (
   id         bigint generated always as identity primary key,
-  market_id  bigint      not null references public.markets(id) on delete cascade,
+  circle_id  bigint      not null references public.circles(id) on delete cascade,
   user_id    uuid        not null references auth.users(id)     on delete cascade,
   body       text        not null check (length(trim(body)) between 1 and 1000),
   created_at timestamptz not null default now()
 );
-create index if not exists comments_market on public.comments (market_id, created_at);
+create index if not exists comments_circle on public.comments (circle_id, created_at);
+
+-- v9: pre-v9 installs still have market_id instead of circle_id - a comment
+-- used to belong to one market ("trash talk" on its own page); now it is one
+-- running chat per circle. Add the new column, backfill it from the market
+-- each old comment belonged to, then drop the old one.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'comments' and column_name = 'market_id'
+  ) then
+    alter table public.comments add column if not exists circle_id bigint references public.circles(id) on delete cascade;
+    update public.comments c set circle_id = m.circle_id
+      from public.markets m where c.market_id = m.id and c.circle_id is null;
+    alter table public.comments alter column circle_id set not null;
+    alter table public.comments drop column market_id;
+    drop index if exists comments_market;
+  end if;
+end $$;
 
 -- ---------------------------------------------------------------------
 -- 1.11 Push
@@ -615,15 +690,10 @@ create policy evidence_insert on public.market_evidence
     and not public.market_is_settled(market_id)
   );
 
--- v2: you may retract your own evidence, but NOT after the market settled.
--- Otherwise the proof behind a payout can be deleted after the fact.
-drop policy if exists evidence_delete_own on public.market_evidence;
-create policy evidence_delete_own on public.market_evidence
-  for delete to authenticated
-  using (
-    uploader_id = (select auth.uid())
-    and not public.market_is_settled(market_id)
-  );
+-- Deleting an evidence row: evidence_delete_own is created in section 10 (v6),
+-- because it needs evidence_can_delete(), which does not exist yet at this point.
+-- (v2's rule stands: proof cannot be deleted after a payout, apart from the
+-- 30-day admin exception v6 adds.)
 
 drop policy if exists ledger_select on public.coin_ledger;
 create policy ledger_select on public.coin_ledger
@@ -632,14 +702,14 @@ create policy ledger_select on public.coin_ledger
 drop policy if exists comments_select on public.comments;
 create policy comments_select on public.comments
   for select to authenticated
-  using ( public.is_circle_member(public.market_circle(market_id)) );
+  using ( public.is_circle_member(circle_id) );
 
 drop policy if exists comments_insert on public.comments;
 create policy comments_insert on public.comments
   for insert to authenticated
   with check (
     user_id = (select auth.uid())
-    and public.is_circle_member(public.market_circle(market_id))
+    and public.is_circle_member(circle_id)
   );
 
 drop policy if exists comments_delete_own on public.comments;
@@ -1232,7 +1302,7 @@ create or replace function public.create_market(
   _circle_id       bigint,
   _question        text,
   _kind            text,
-  _closes_at       timestamptz,
+  _closes_at       timestamptz default null,  -- v7: omit for a standing bet with no scheduled close
   _options         text[]      default null,
   _line            numeric     default null,
   _subject_id      uuid        default null,
@@ -1657,7 +1727,7 @@ begin
     and balance  >= _amount
   returning balance into _new_balance;
 
-  if _new_balance is null then raise exception 'Not enough coins'; end if;
+  if _new_balance is null then raise exception 'Not enough dollars'; end if;
 
   insert into public.bets (market_id, option_id, user_id, amount, was_late)
   values (_market_id, _option_id, auth.uid(), _amount, _review is not null)
@@ -1736,7 +1806,7 @@ begin
     set balance = balance - _bond
     where circle_id = _circle_id and user_id = auth.uid() and balance >= _bond
     returning balance into _bal;
-    if _bal is null then raise exception 'Not enough coins to post the bond'; end if;
+    if _bal is null then raise exception 'Not enough dollars to post the bond'; end if;
 
     insert into public.coin_ledger
       (circle_id, user_id, amount, reason, market_id, actor_id, note)
@@ -2368,9 +2438,43 @@ grant execute on function public.clear_proposal_vote(bigint)                    
 -- 10. STORAGE
 --   Private bucket. Path convention: <circle_id>/<market_id>/<uuid>.<ext>
 -- =====================================================================
-insert into storage.buckets (id, name, public)
-values ('evidence', 'evidence', false)
-on conflict (id) do nothing;
+-- ---------------------------------------------------------------------
+-- v6: evidence limits, defined once.
+--
+--   The bucket, the policies and evidence_upload_status() all read this, so the
+--   number a person is shown is the number that is enforced. File size and type
+--   are enforced by Storage itself (the bucket settings just below), so they can
+--   only be verified against a real project. The counts and byte caps are RLS,
+--   and are tested in sandbox/run.mjs.
+--
+--   The byte caps are SOFT. A file's size is not known until its upload has
+--   finished, so the check sees only what is already stored, and the last upload
+--   can overshoot by up to one file (more if several land at the same instant).
+-- ---------------------------------------------------------------------
+create or replace function public.evidence_limits()
+returns table (
+  max_file_bytes       int,
+  max_files_per_market int,
+  max_circle_bytes     bigint,
+  max_total_bytes      bigint,
+  purge_after_days     int
+)
+language sql immutable set search_path = '' as $$
+  select 2097152,            -- 2 MiB a file
+         6,                  -- files per market
+         104857600::bigint,  -- 100 MiB per circle
+         838860800::bigint,  -- 800 MiB for the whole bucket, headroom under a 1 GB plan
+         30;                 -- days after settlement before a circle admin may delete evidence
+$$;
+
+-- An upsert, not `do nothing`: re-running this file must tighten a bucket that
+-- already exists, otherwise an old project keeps the unlimited bucket forever.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+select 'evidence', 'evidence', false, l.max_file_bytes, array['image/jpeg']
+from public.evidence_limits() l
+on conflict (id) do update
+  set file_size_limit    = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
 
 create or replace function public.evidence_circle_id(_name text)
 returns bigint language sql immutable set search_path = '' as $$
@@ -2402,6 +2506,131 @@ $$;
 
 grant execute on function public.evidence_circle_id(text) to authenticated;
 grant execute on function public.evidence_market_id(text) to authenticated;
+
+-- ---------------------------------------------------------------------
+-- v6: what is stored, and who may add or remove it.
+--
+--   SECURITY DEFINER because storage.objects is RLS-filtered: a member sees only
+--   their own circles' files, which would understate the whole-bucket total.
+--   They match on evidence_circle_id()/evidence_market_id() rather than a path
+--   prefix, because '007/2/x.jpg' resolves to circle 7 and a prefix match would
+--   let zero-padding walk around the quota.
+-- ---------------------------------------------------------------------
+create or replace function public.evidence_market_files(_market_id bigint)
+returns int language sql security definer stable set search_path = '' as $$
+  select count(*)::int
+  from storage.objects o
+  where o.bucket_id = 'evidence'
+    and public.evidence_market_id(o.name) = _market_id;
+$$;
+
+create or replace function public.evidence_circle_bytes(_circle_id bigint)
+returns bigint language sql security definer stable set search_path = '' as $$
+  select coalesce(sum(coalesce((o.metadata ->> 'size')::bigint, 0)), 0)::bigint
+  from storage.objects o
+  where o.bucket_id = 'evidence'
+    and public.evidence_circle_id(o.name) = _circle_id;
+$$;
+
+create or replace function public.evidence_total_bytes()
+returns bigint language sql security definer stable set search_path = '' as $$
+  select coalesce(sum(coalesce((o.metadata ->> 'size')::bigint, 0)), 0)::bigint
+  from storage.objects o
+  where o.bucket_id = 'evidence';
+$$;
+
+-- NULL means "go ahead". Anything else is a sentence fit to show a person, and
+-- is exactly what evidence_upload_status() hands the UI. The upload policy asks
+-- the same function, so the two cannot disagree.
+--
+-- A market you cannot see and a market that does not exist answer alike, so this
+-- is not a way to probe for other circles' market ids.
+create or replace function public.evidence_upload_block(_market_id bigint)
+returns text language plpgsql security definer stable set search_path = '' as $$
+declare _circle bigint; _lim record;
+begin
+  _circle := public.market_circle(_market_id);
+  if _circle is null or not public.is_circle_member(_circle) then
+    return 'Market not found';
+  end if;
+  if public.market_is_settled(_market_id) then
+    return 'This market has settled, so its photos are locked';
+  end if;
+
+  select * into _lim from public.evidence_limits();
+  if public.evidence_market_files(_market_id) >= _lim.max_files_per_market then
+    return format('This market already has %s photos', _lim.max_files_per_market);
+  end if;
+  if public.evidence_circle_bytes(_circle) >= _lim.max_circle_bytes then
+    return 'This circle''s photo storage is full';
+  end if;
+  if public.evidence_total_bytes() >= _lim.max_total_bytes then
+    return 'Photo storage is full for now';
+  end if;
+  return null;
+end;
+$$;
+
+-- Who may remove a stored file, and the evidence row that describes it.
+--   Unsettled market: whoever uploaded it, the market's creator, or a circle admin.
+--     The creator/admin rule is what lets a cancelled market clean up its own
+--     files. It has to happen BEFORE cancel_market: market_is_settled() answers
+--     true for a market that no longer exists, so afterwards nobody could.
+--   Settled market: nobody, until purge_after_days have passed; then a circle
+--     admin. Frozen proof is the point, but a circle that fills its quota must
+--     still be able to free space.
+create or replace function public.evidence_can_delete(_market_id bigint, _uploader uuid)
+returns boolean language plpgsql security definer stable set search_path = '' as $$
+declare _m record; _lim record;
+begin
+  select circle_id, creator_id, status, resolved_at into _m
+  from public.markets where id = _market_id;
+  if not found then return false; end if;
+
+  if _m.status in ('resolved','voided') then
+    select * into _lim from public.evidence_limits();
+    return public.is_circle_admin(_m.circle_id)
+       and _m.resolved_at is not null
+       and _m.resolved_at < now() - make_interval(days => _lim.purge_after_days);
+  end if;
+
+  return _uploader = auth.uid()
+      or _m.creator_id = auth.uid()
+      or public.is_circle_admin(_m.circle_id);
+end;
+$$;
+
+-- What the UI asks before it lets someone pick a photo.
+create or replace function public.evidence_upload_status(_market_id bigint)
+returns jsonb language plpgsql security definer stable set search_path = '' as $$
+declare _circle bigint; _lim record; _reason text;
+begin
+  if auth.uid() is null then raise exception 'Not signed in'; end if;
+  _circle := public.market_circle(_market_id);
+  if _circle is null or not public.is_circle_member(_circle) then
+    raise exception 'Market not found';
+  end if;
+
+  select * into _lim from public.evidence_limits();
+  _reason := public.evidence_upload_block(_market_id);
+  return jsonb_build_object(
+    'allowed',          _reason is null,
+    'reason',           _reason,
+    'files',            public.evidence_market_files(_market_id),
+    'max_files',        _lim.max_files_per_market,
+    'circle_bytes',     public.evidence_circle_bytes(_circle),
+    'max_circle_bytes', _lim.max_circle_bytes,
+    'max_file_bytes',   _lim.max_file_bytes,
+    'purge_after_days', _lim.purge_after_days
+  );
+end;
+$$;
+
+-- The policies below call these as the signed-in user, so they need EXECUTE. The
+-- three counters above are only ever called from inside these definers.
+grant execute on function public.evidence_upload_block(bigint)     to authenticated;
+grant execute on function public.evidence_can_delete(bigint, uuid) to authenticated;
+grant execute on function public.evidence_upload_status(bigint)    to authenticated;
 
 -- v5: the two path segments must agree.
 --
@@ -2436,16 +2665,24 @@ create policy evidence_upload on storage.objects
     and public.evidence_circle_id(name)
         = public.market_circle(public.evidence_market_id(name))
     and not public.market_is_settled(public.evidence_market_id(name))
+    -- v6: file count per market, byte caps per circle and for the whole bucket
+    and public.evidence_upload_block(public.evidence_market_id(name)) is null
   );
 
+-- v6: see evidence_can_delete().
 drop policy if exists evidence_delete on storage.objects;
 create policy evidence_delete on storage.objects
   for delete to authenticated
   using (
     bucket_id = 'evidence'
-    and owner = auth.uid()
-    and not public.market_is_settled(public.evidence_market_id(name))
+    and public.evidence_can_delete(public.evidence_market_id(name), owner)
   );
+
+-- v6: the same rule for the evidence ROW, so a row and its file always go together.
+drop policy if exists evidence_delete_own on public.market_evidence;
+create policy evidence_delete_own on public.market_evidence
+  for delete to authenticated
+  using ( public.evidence_can_delete(market_id, uploader_id) );
 
 
 -- =====================================================================
@@ -2758,6 +2995,12 @@ begin
   end if;
 
   if _status in ('resolved','voided') then
+    -- v6: the one exception. Once a circle admin may delete a settled market's
+    -- evidence (evidence_can_delete: purge_after_days after settlement), the row
+    -- has to be able to go with its file. Inserts and updates stay frozen.
+    if tg_op = 'DELETE' and public.evidence_can_delete(old.market_id, old.uploader_id) then
+      return old;
+    end if;
     raise exception
       'Market % has settled (%); its evidence is frozen.', _mid, _status
       using errcode = 'restrict_violation';
@@ -2910,6 +3153,9 @@ grant execute on function public.proposal_circle(bigint)                        
 grant execute on function public.market_is_settled(bigint)                      to authenticated;
 grant execute on function public.evidence_circle_id(text)                       to authenticated;
 grant execute on function public.evidence_market_id(text)                       to authenticated;
+grant execute on function public.evidence_upload_block(bigint)                  to authenticated;
+grant execute on function public.evidence_can_delete(bigint, uuid)              to authenticated;
+grant execute on function public.evidence_upload_status(bigint)                 to authenticated;
 grant execute on function public.create_circle(text)                            to authenticated;
 grant execute on function public.join_circle(text)                              to authenticated;
 grant execute on function public.rename_member(bigint, text)                    to authenticated;
@@ -3069,11 +3315,25 @@ begin
     end if;
   end if;
 
+  -- v6: the evidence bucket has a size and a type limit, and uploads enforce the caps
+  select count(*) into _n from storage.buckets
+  where id = 'evidence' and file_size_limit is not null and allowed_mime_types is not null;
+  if _n <> 1 then
+    raise exception 'SELF-TEST FAIL: the evidence bucket has no file size / type limit';
+  end if;
+
+  select count(*) into _n from pg_policies
+  where schemaname = 'storage' and tablename = 'objects'
+    and policyname = 'evidence_upload' and with_check like '%evidence_upload_block%';
+  if _n <> 1 then
+    raise exception 'SELF-TEST FAIL: evidence_upload does not enforce the upload caps';
+  end if;
+
   -- no circle is out of balance
   select count(*) into _n from public.circle_reconciliation where drift <> 0;
   if _n > 0 then
     raise exception 'SELF-TEST FAIL: % circle(s) have ledger drift', _n;
   end if;
 
-  raise notice 'SELF-TEST PASSED: RLS on all tables, 5 guards live, Data API grants correct (authenticated can read, anon locked out, money tables function-only), no anon-callable functions, all definers pinned, ledger balanced.';
+  raise notice 'SELF-TEST PASSED: RLS on all tables, 5 guards live, Data API grants correct (authenticated can read, anon locked out, money tables function-only), no anon-callable functions, all definers pinned, evidence bucket limited, ledger balanced.';
 end $$;
