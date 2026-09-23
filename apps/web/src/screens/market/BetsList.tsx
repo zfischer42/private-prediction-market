@@ -75,6 +75,7 @@ export function AllBets({
                 {money(b.amount)}
                 <span className="muted small"> {when(b.created_at)}</span>
               </span>
+              {b.status === 'void' && <Pill tone="muted">{betStatus(b).label}</Pill>}
               {canVoid && b.status === 'pending' && (
                 <ConfirmButton
                   className="btn small danger"

@@ -448,6 +448,12 @@ check('voidBet refunds the stake',
       `${preVoid} -> ${(await lib.getMyMembership(circleId)).data.balance}`);
 check('voided bet no longer counts as open',
       (await lib.getMyBetsOnMarket(vbId)).data.length === 0);
+const vbList = (await lib.getMarketBets(vbId)).data ?? [];
+check('getMarketBets still lists the voided bet, marked void, so the refund is visible',
+      vbList.length === 1 && vbList[0].status === 'void', JSON.stringify(vbList.map(b => b.status)));
+as('alice');
+expectErr('...and the market still cannot be cancelled, matching what the UI now shows',
+  await lib.cancelMarket(vbId), 'Bets have been placed');
 
 // leaveCircle is refused while money is still in play
 as('carol');
@@ -1100,10 +1106,30 @@ check('preparePhoto explains itself outside a browser',
 check('getEvidenceUrls with nothing to sign is an empty map',
   JSON.stringify((await lib.getEvidenceUrls([])).data) === '{}');
 
-// removeMarketFiles: the creator clears a market; a plain member's call removes only their own
-const seedRow = (uid, mkt) => sqlAs(uid,
+// ---- v10: a row must describe a real file, uploaded by the same person, in that market's folder
+const rowFor = (uid, mkt, name) => sqlAs(uid,
   `insert into public.market_evidence (market_id, uploader_id, storage_path, media_type)
-   values ($1, $2, $3, 'image') returning id`, [mkt, uid, fpath(evC, mkt)]);
+   values ($1, $2, $3, 'image') returning id`, [mkt, uid, name]);
+const noFile = await rowFor(users.bob, E2, fpath(evC, E2));
+check('v10: a row pointing at a file that does not exist is refused',
+  noFile.error?.includes('row-level security'), noFile.error);
+const carolFile = (await put(users.carol, evC, E2)).rows[0].name;
+const notMine = await rowFor(users.bob, E2, carolFile);
+check('v10: a row pointing at someone else\'s file is refused',
+  notMine.error?.includes('row-level security'), notMine.error);
+const e3File = (await put(users.bob, evC, E3)).rows[0].name;
+const wrongMarket = await rowFor(users.bob, E2, e3File);
+check('v10: a row pointing at a file in another market\'s folder is refused',
+  wrongMarket.error?.includes('row-level security'), wrongMarket.error);
+const mine = await rowFor(users.carol, E2, carolFile);
+check('v10: a row for your own file in that market is accepted', !mine.error, mine.error);
+const twice = await rowFor(users.carol, E2, carolFile);
+check('v10: one file cannot back two rows', /duplicate key|unique/.test(twice.error ?? ''), twice.error);
+await db.query(`delete from public.market_evidence where storage_path = $1`, [carolFile]);
+await db.query(`delete from storage.objects where name = any($1)`, [[carolFile, e3File]]);
+
+// removeMarketFiles: the creator clears a market; a plain member's call removes only their own
+const seedRow = async (uid, mkt) => rowFor(uid, mkt, (await put(uid, evC, mkt)).rows[0].name);
 await seedRow(users.bob, E2); await seedRow(users.bob, E2); await seedRow(users.carol, E2);
 const rowCount = async (mkt) => (await db.query(
   `select count(*)::int n from public.market_evidence where market_id = $1`, [mkt])).rows[0].n;

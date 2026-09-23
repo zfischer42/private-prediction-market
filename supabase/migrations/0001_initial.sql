@@ -1,9 +1,20 @@
 -- =====================================================================
--- PRIVATE PREDICTION MARKET - FULL SCHEMA  v9
+-- PRIVATE PREDICTION MARKET - FULL SCHEMA  v10
 -- Postgres / Supabase
 --
 -- Run top to bottom in the Supabase SQL Editor. Copy-paste ready.
 -- Look for "SELF-TEST PASSED" in the output; it raises loudly on failure.
+--
+-- v10 closes the other door to the evidence caps. v6 capped FILES (the storage
+-- upload policy), but a market_evidence ROW only had to name a market you are
+-- in, and storage_path was free text. Anyone could insert rows straight into
+-- the table - as many as they liked, pointing at files that do not exist or at
+-- someone else's - and the gallery showed every one. A row must now describe a
+-- real file in the evidence bucket, uploaded by the same person, in that
+-- market's folder. storage_path is unique, so rows are one-to-one with files and
+-- the file caps now cap the rows too. The caps themselves are deliberately NOT
+-- re-checked on the row: the client uploads first and records second, so the
+-- 6th photo's row would be refused by the 6th photo's own file.
 --
 -- v9 moves comments off individual markets. "Trash talk" living on one bet's
 -- page never fit anything that wasn't about that bet - a circle is a standing
@@ -681,14 +692,9 @@ create policy evidence_select on public.market_evidence
   for select to authenticated
   using ( public.is_circle_member(public.market_circle(market_id)) );
 
-drop policy if exists evidence_insert on public.market_evidence;
-create policy evidence_insert on public.market_evidence
-  for insert to authenticated
-  with check (
-    uploader_id = (select auth.uid())
-    and public.is_circle_member(public.market_circle(market_id))
-    and not public.market_is_settled(market_id)
-  );
+-- Adding an evidence row: evidence_insert is created in section 10 (v10), because
+-- it needs evidence_object_ok(), which needs evidence_market_id(), which does not
+-- exist yet at this point.
 
 -- Deleting an evidence row: evidence_delete_own is created in section 10 (v6),
 -- because it needs evidence_can_delete(), which does not exist yet at this point.
@@ -2684,6 +2690,35 @@ create policy evidence_delete_own on public.market_evidence
   for delete to authenticated
   using ( public.evidence_can_delete(market_id, uploader_id) );
 
+-- v10: an evidence row must describe a real file, uploaded by the same person, in
+-- that market's folder. Before this, storage_path was free text and the row policy
+-- never looked at the bucket, so rows could be inserted without limit - the caps
+-- above only ever applied to files. SECURITY DEFINER for the same reason as the
+-- counters: storage.objects is RLS-filtered, and this must not depend on what the
+-- read policy happens to show. The circle segment needs no check of its own:
+-- evidence_upload already refuses a file whose circle and market disagree.
+create or replace function public.evidence_object_ok(_path text, _market_id bigint, _uploader uuid)
+returns boolean language sql security definer stable set search_path = '' as $$
+  select exists (
+    select 1 from storage.objects o
+    where o.bucket_id = 'evidence'
+      and o.name = _path
+      and o.owner = _uploader
+      and public.evidence_market_id(o.name) = _market_id
+  );
+$$;
+grant execute on function public.evidence_object_ok(text, bigint, uuid) to authenticated;
+
+drop policy if exists evidence_insert on public.market_evidence;
+create policy evidence_insert on public.market_evidence
+  for insert to authenticated
+  with check (
+    uploader_id = (select auth.uid())
+    and public.is_circle_member(public.market_circle(market_id))
+    and not public.market_is_settled(market_id)
+    and public.evidence_object_ok(storage_path, market_id, uploader_id)
+  );
+
 
 -- =====================================================================
 -- 11. REALTIME
@@ -3156,7 +3191,8 @@ grant execute on function public.evidence_market_id(text)                       
 grant execute on function public.evidence_upload_block(bigint)                  to authenticated;
 grant execute on function public.evidence_can_delete(bigint, uuid)              to authenticated;
 grant execute on function public.evidence_upload_status(bigint)                 to authenticated;
-grant execute on function public.create_circle(text)                            to authenticated;
+grant execute on function public.evidence_object_ok(text, bigint, uuid)         to authenticated;
+grant execute on function public.create_circle(text)                           to authenticated;
 grant execute on function public.join_circle(text)                              to authenticated;
 grant execute on function public.rename_member(bigint, text)                    to authenticated;
 grant execute on function public.set_circle_settings(bigint, int, int, text)    to authenticated;
@@ -3329,11 +3365,19 @@ begin
     raise exception 'SELF-TEST FAIL: evidence_upload does not enforce the upload caps';
   end if;
 
+  -- v10: an evidence row must point at a real uploaded file, or the caps are moot
+  select count(*) into _n from pg_policies
+  where schemaname = 'public' and tablename = 'market_evidence'
+    and policyname = 'evidence_insert' and with_check like '%evidence_object_ok%';
+  if _n <> 1 then
+    raise exception 'SELF-TEST FAIL: evidence_insert does not require a real uploaded file';
+  end if;
+
   -- no circle is out of balance
   select count(*) into _n from public.circle_reconciliation where drift <> 0;
   if _n > 0 then
     raise exception 'SELF-TEST FAIL: % circle(s) have ledger drift', _n;
   end if;
 
-  raise notice 'SELF-TEST PASSED: RLS on all tables, 5 guards live, Data API grants correct (authenticated can read, anon locked out, money tables function-only), no anon-callable functions, all definers pinned, evidence bucket limited, ledger balanced.';
+  raise notice 'SELF-TEST PASSED: RLS on all tables, 5 guards live, Data API grants correct (authenticated can read, anon locked out, money tables function-only), no anon-callable functions, all definers pinned, evidence bucket limited, evidence rows tied to real files, ledger balanced.';
 end $$;

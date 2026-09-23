@@ -26,13 +26,16 @@ export function placeBet(
 }
 
 // Every bet on a market, so you can show who is on which side.
+//
+// Voided bets are included (status 'void'), so a refund shows as one instead of
+// the bet silently vanishing. They also still count for cancel_market(), which
+// refuses a market with any bet row at all.
 export function getMarketBets(marketId: number): Promise<Result<Bet[]>> {
   return read(
     supabase
       .from('bets')
       .select('*')
       .eq('market_id', marketId)
-      .is('voided_at', null)
       .order('created_at', { ascending: false }),
   );
 }

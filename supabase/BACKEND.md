@@ -558,3 +558,4 @@ today.
 | v7 | `closes_at` is now optional. A market with no scheduled close stays open until someone proposes what happened, with no minimum wait |
 | v8 | The unit shown to a user renamed from "coins" to "dollars" - wording only, in `place_bet`/`propose_resolution`'s error strings. `coin_ledger` and every other internal identifier are unchanged |
 | v9 | `comments` moved from per-market to per-circle: one running chat for the whole group instead of separate threads under each bet. `market_id` becomes `circle_id`; old rows are backfilled from the market they pointed at |
+| v10 | A `market_evidence` row must describe a real file in the evidence bucket, uploaded by the same person, in that market's folder (`evidence_object_ok`). Before this, rows could be inserted without limit, pointing anywhere, sidestepping the v6 caps |
