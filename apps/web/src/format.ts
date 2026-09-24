@@ -16,8 +16,22 @@ export function signedMoney(n: number): string {
   return '$0';
 }
 
-export function percent(n: number | null | undefined): string {
-  return n == null ? '-' : `${n}%`;
+// The odds view returns numeric(…,1), which arrives as a string like "70.0".
+export function percent(n: number | string | null | undefined): string {
+  if (n == null) return '-';
+  const v = Number(n);
+  if (v > 0 && v < 1) return '<1%';
+  if (v < 100 && v > 99) return '>99%';
+  return `${Math.round(v)}%`;
+}
+
+// Yes/No and Over/Under read as the two sides of a trade, so they get the
+// green/red treatment. Multiple-choice and open markets have no such pair.
+export function sideOf(kind: MarketKind, index: number): 'yes' | 'no' | null {
+  if (kind !== 'binary' && kind !== 'over_under') return null;
+  if (index === 0) return 'yes';
+  if (index === 1) return 'no';
+  return null;
 }
 
 const dateTime = new Intl.DateTimeFormat(undefined, {

@@ -4,6 +4,7 @@ import { useResource } from '../hooks';
 import { Link } from '../router';
 import { money } from '../format';
 import { ErrorNote, Loading, useToast } from '../ui';
+import { ChevronLeft, CopyIcon, GearIcon } from '../icons';
 import MarketsTab from './circle/MarketsTab';
 import StandingsTab from './circle/StandingsTab';
 import ChatTab from './circle/ChatTab';
@@ -44,13 +45,14 @@ export default function CircleScreen({ circleId }: { circleId: number }) {
 
   const membership = me.data;
   const isAdmin = membership.role === 'admin';
+  // Settings sits behind the gear instead of in this row: five tabs don't fit
+  // a phone, and the fifth one got cut off mid-word.
   const tabs: Array<[Tab, string]> = [
     ['markets', 'Markets'],
     ['standings', 'Standings'],
     ['chat', 'Chat'],
     ['members', 'Members'],
   ];
-  if (isAdmin) tabs.push(['settings', 'Settings']);
 
   async function copyCode() {
     try {
@@ -63,20 +65,33 @@ export default function CircleScreen({ circleId }: { circleId: number }) {
 
   return (
     <div className="stack">
-      <Link to="/" className="back">&larr; All circles</Link>
-      <h1>{circle.data.name}</h1>
+      <Link to="/" className="back">
+        <ChevronLeft width={18} height={18} /> Circles
+      </Link>
+      <div className="spread">
+        <h1>{circle.data.name}</h1>
+        {isAdmin && (
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Circle settings"
+            aria-pressed={tab === 'settings'}
+            onClick={() => setTab(tab === 'settings' ? 'markets' : 'settings')}
+          >
+            <GearIcon />
+          </button>
+        )}
+      </div>
 
-      <div className="card spread">
+      <div className="stat-row">
         <div>
           <span className="label">Your balance</span>
           <strong className="big">{money(membership.balance)}</strong>
         </div>
-        <div className="right">
-          <span className="label">Invite code</span>
-          <button type="button" className="code" onClick={copyCode} title="Copy invite code">
-            {circle.data.join_code}
-          </button>
-        </div>
+        <button type="button" className="code" onClick={copyCode} title="Copy invite code">
+          {circle.data.join_code}
+          <CopyIcon width={14} height={14} />
+        </button>
       </div>
 
       <div className="tabs" role="tablist">

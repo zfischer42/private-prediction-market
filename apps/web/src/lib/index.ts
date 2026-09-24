@@ -57,6 +57,7 @@ export {
   getMarketWithOptions,
   getOptions,
   getOdds,
+  getOddsForMarkets,
   isBettingOpen,
   isSettled,
   canSubmitOption,

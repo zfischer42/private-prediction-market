@@ -16,6 +16,9 @@
     <!-- iOS only reads this tag for the home-screen icon, not the manifest. -->
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Private Prediction Market</title>
+    <!-- Painted before any JS or CSS bundle arrives. Without it an installed
+         launch flashes white until styles.css loads. -->
+    <style>html,body{background:#000;color-scheme:dark}</style>
   </head>
   <body>
     <div id="root"></div>

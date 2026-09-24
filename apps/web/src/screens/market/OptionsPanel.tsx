@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { canSubmitOption, submitOption, type Market } from '../../lib';
 import { useRunner } from '../../hooks';
-import { money, percent, plural, when } from '../../format';
+import { money, percent, plural, sideOf, when } from '../../format';
 import { Pill } from '../../ui';
 import type { OptionRow } from './types';
 
@@ -31,31 +31,32 @@ export default function OptionsPanel({
 
   return (
     <section className="card stack">
-      <h2>Odds</h2>
+      <h2>Outcomes</h2>
 
       {rows.length === 0 ? (
         <p className="hint">
           {market.kind === 'open' ? 'No options yet - add the first one.' : 'No options yet.'}
         </p>
       ) : (
-        <ul className="list">
-          {rows.map((r) => (
-            <li key={r.id} className="option">
-              <div className="spread">
-                <strong>{r.label}</strong>
-                <span className="row">
-                  {market.winning_option_id === r.id && <Pill tone="good">Winner</Pill>}
-                  {r.pct !== null && <span className="muted">{percent(r.pct)}</span>}
+        <ul className="outcomes">
+          {rows.map((r, i) => {
+            const side = sideOf(market.kind, i);
+            const won = market.winning_option_id === r.id;
+            return (
+              <li key={r.id} className={`outcome${won ? ' winner' : ''}`}>
+                <span className="label-text">
+                  {r.label} {won && <Pill tone="good">Winner</Pill>}
                 </span>
-              </div>
-              <div className="bar" role="presentation">
-                <span style={{ width: `${r.pct ?? 0}%` }} />
-              </div>
-              <p className="muted small">
-                {money(r.pool)} from {plural(r.betCount, 'bet')}
-              </p>
-            </li>
-          ))}
+                <span className="pct">{percent(r.pct)}</span>
+                <div className={`bar ${side ?? 'neutral'}`} role="presentation">
+                  <span style={{ width: `${r.pct ?? 0}%` }} />
+                </div>
+                <span className="muted small tnum" style={{ gridColumn: '1 / -1' }}>
+                  {money(r.pool)} · {plural(r.betCount, 'bet')}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
 

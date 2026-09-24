@@ -19,8 +19,9 @@ import {
 } from '../lib';
 import { useMe, useNow, useResource, useRunner } from '../hooks';
 import { Link, navigate } from '../router';
-import { kindLabel, phaseOf, when } from '../format';
+import { kindLabel, money, percent, phaseOf, when } from '../format';
 import { ConfirmButton, ErrorNote, Loading, Pill } from '../ui';
+import { ChevronLeft } from '../icons';
 import OptionsPanel from './market/OptionsPanel';
 import BetPanel from './market/BetPanel';
 import { AllBets, MyBets } from './market/BetsList';
@@ -152,26 +153,39 @@ function MarketView({
     if (res.error === undefined) navigate(`/circle/${market.circle_id}`);
   }
 
+  const paired = market.kind === 'binary' || market.kind === 'over_under';
+  const totalPool = rows.reduce((sum, r) => sum + Number(r.pool), 0);
+  const leader = [...rows].sort((a, b) => Number(b.pct ?? 0) - Number(a.pct ?? 0))[0];
+  const headline = settled ? null : paired ? rows[0] : leader;
+
   return (
     <div className="stack">
       <Link to={`/circle/${market.circle_id}`} className="back">
-        &larr; {circle.data.name}
+        <ChevronLeft width={18} height={18} /> {circle.data.name}
       </Link>
 
-      <div className="row">
-        <Pill tone={phase.tone}>{phase.label}</Pill>
-        <Pill tone="muted">{kindLabel(market)}</Pill>
+      <div className="stack tight">
+        <div className="row">
+          <Pill tone={phase.tone}>{phase.label}</Pill>
+          <span className="muted small">{kindLabel(market)}</span>
+        </div>
+        <h1>{market.question}</h1>
+        {market.subject_id && <p className="muted small">About {nameOf(market.subject_id)}</p>}
       </div>
-      <h1>{market.question}</h1>
-      {market.subject_id && <p className="muted">About {nameOf(market.subject_id)}</p>}
-      <p className="muted small">
-        {market.closes_at === null
-          ? <>Betting opened {when(market.opens_at)}. No scheduled close - stays open until someone reports what happened.</>
-          : <>Betting {when(market.opens_at)} to {when(market.closes_at)}. Result known by{' '}
-            {when(market.event_end_at ?? market.closes_at)}.</>}
-      </p>
 
-      <OptionsPanel market={market} rows={rows} now={now} onChanged={refreshAll} />
+      {headline && headline.pct !== null && (
+        <div className="hero-chance">
+          <strong className={paired ? 'gain' : undefined}>{percent(headline.pct)}</strong>
+          <span>{paired ? `chance of ${headline.label}` : `${headline.label} leads`}</span>
+        </div>
+      )}
+
+      <p className="muted small tnum">
+        {money(totalPool)} pool ·{' '}
+        {market.closes_at === null
+          ? <>No scheduled close - open until someone reports what happened.</>
+          : <>Closes {when(market.closes_at)} · Result by {when(market.event_end_at ?? market.closes_at)}</>}
+      </p>
 
       {!settled && (
         <BetPanel
@@ -182,6 +196,8 @@ function MarketView({
           onPlaced={refreshMoney}
         />
       )}
+
+      <OptionsPanel market={market} rows={rows} now={now} onChanged={refreshAll} />
 
       <MyBets bets={myBets} rows={rows} />
 

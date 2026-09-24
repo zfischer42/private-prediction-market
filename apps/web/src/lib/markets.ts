@@ -254,6 +254,19 @@ export function getOdds(marketId: number): Promise<Result<MarketOdds[]>> {
   );
 }
 
+// getOdds() for a whole list at once, so a market list can show every card's
+// odds in one round trip instead of one query per card.
+export function getOddsForMarkets(marketIds: number[]): Promise<Result<MarketOdds[]>> {
+  if (marketIds.length === 0) return Promise.resolve({ data: [] });
+  return read(
+    supabase
+      .from('market_odds')
+      .select('*')
+      .in('market_id', marketIds)
+      .order('sort_order'),
+  );
+}
+
 // ---------------------------------------------------------------------
 // Timing helpers
 //

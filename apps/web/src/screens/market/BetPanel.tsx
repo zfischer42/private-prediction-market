@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { placeBet, projectedPayout, type Market } from '../../lib';
 import { useRunner } from '../../hooks';
-import { money, percent } from '../../format';
+import { money, percent, sideOf } from '../../format';
 import { useToast } from '../../ui';
 import type { OptionRow } from './types';
 
@@ -62,60 +62,92 @@ export default function BetPanel({
     }
   }
 
+  const paired = market.kind === 'binary' || market.kind === 'over_under';
+  const chosenIndex = rows.findIndex((r) => r.id === optionId);
+  const chosenSide = chosenIndex >= 0 ? sideOf(market.kind, chosenIndex) : null;
+  const overBalance = validStake && stake > balance;
+
+  let cta = 'Pick a side';
+  if (runner.busy) cta = 'Placing...';
+  else if (chosen && overBalance) cta = 'Not enough dollars';
+  else if (chosen && validStake) cta = `Bet ${money(stake)} on ${chosen.label}`;
+  else if (chosen) cta = 'Enter an amount';
+
+  const sideButton = (r: OptionRow, i: number) => (
+    <button
+      key={r.id}
+      type="button"
+      role="radio"
+      aria-checked={optionId === r.id}
+      className={`side lg ${sideOf(market.kind, i) ?? 'neutral'}${optionId === r.id ? ' on' : ''}`}
+      onClick={() => setOptionId(r.id)}
+    >
+      <span>{r.label}</span>
+      <span>{percent(r.pct)}</span>
+    </button>
+  );
+
   return (
-    <form className="card stack" onSubmit={onSubmit}>
+    <form className="card ticket" onSubmit={onSubmit}>
       <div className="spread">
         <h2>Place a bet</h2>
-        <span className="muted">You have {money(balance)}</span>
+        <span className="muted small tnum">Balance {money(balance)}</span>
       </div>
 
-      <div className="chips" role="radiogroup" aria-label="Option">
-        {rows.map((r) => (
-          <button
-            key={r.id}
-            type="button"
-            role="radio"
-            aria-checked={optionId === r.id}
-            className={`chip${optionId === r.id ? ' on' : ''}`}
-            onClick={() => setOptionId(r.id)}
-          >
-            {r.label}
-            {r.pct !== null && <span className="muted"> {percent(r.pct)}</span>}
-          </button>
-        ))}
+      <div className={paired ? 'sides' : 'side-list'} role="radiogroup" aria-label="Pick a side">
+        {rows.map(sideButton)}
       </div>
 
-      <label className="field">
-        <span>Dollars</span>
-        <input
-          type="number"
-          inputMode="numeric"
-          min={1}
-          step={1}
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          placeholder="25"
-        />
-      </label>
-
-      <div className="chips">
-        {QUICK_AMOUNTS.filter((q) => q <= balance).map((q) => (
-          <button key={q} type="button" className="chip" onClick={() => setAmount(String(q))}>
-            ${q}
-          </button>
-        ))}
+      <div className="stack tight">
+        <label className="amount">
+          <span aria-hidden>$</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            step={1}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0"
+            aria-label="Amount in dollars"
+          />
+        </label>
+        <div className="chips">
+          {QUICK_AMOUNTS.filter((q) => q <= balance).map((q) => (
+            <button key={q} type="button" className="chip" onClick={() => setAmount(String(q))}>
+              ${q}
+            </button>
+          ))}
+          {balance > 0 && (
+            <button type="button" className="chip" onClick={() => setAmount(String(balance))}>
+              Max
+            </button>
+          )}
+        </div>
       </div>
 
-      {chosen && estimate !== null && (
-        <p className="hint">
-          If {chosen.label} wins you would collect about {money(estimate)}
-          {estimate === stake ? ' - nobody has bet against it yet, so that is just your stake back' : ''}.
-          It moves as others bet.
-        </p>
+      {chosen && estimate !== null && !overBalance && (
+        <dl className="summary">
+          <div>
+            <dt>Payout if {chosen.label} wins</dt>
+            <dd className="gain">{money(estimate)}</dd>
+          </div>
+          <div>
+            <dt>Profit</dt>
+            <dd>{estimate === stake ? 'Stake back only' : `+${money(estimate - stake)}`}</dd>
+          </div>
+          <div>
+            <dt className="small">Estimate - winners split the pot, so it moves as others bet.</dt>
+          </div>
+        </dl>
       )}
 
-      <button className="btn primary" disabled={runner.busy || optionId === null || !validStake}>
-        {runner.busy ? 'Placing...' : 'Place bet'}
+      <button
+        className={`btn block ${chosenSide === 'no' ? 'no' : 'primary'}`}
+        style={{ minHeight: '3.25rem' }}
+        disabled={runner.busy || optionId === null || !validStake || overBalance}
+      >
+        {cta}
       </button>
     </form>
   );
