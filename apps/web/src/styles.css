@@ -39,6 +39,52 @@ body,
   min-height: 100%;
 }
 
+html {
+  /* iOS enlarges text on rotation to landscape unless told not to. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Taps, not text: no double-tap-to-zoom delay, and a long press on a button
+   doesn't start selecting its label or pop the iOS link preview. */
+a,
+button,
+.btn,
+.side,
+.chip,
+.tab {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* iOS draws its own rounded, shaded inputs and buttons over these styles. */
+button,
+textarea,
+input:not([type='checkbox']):not([type='radio']) {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* iOS collapses an empty datetime-local to a short, centered pill. */
+input[type='datetime-local'],
+input[type='date'] {
+  display: block;
+  min-height: 2.75rem;
+  text-align: left;
+}
+
+input::-webkit-date-and-time-value {
+  text-align: left;
+}
+
 body {
   min-height: 100vh;
   min-height: 100dvh;
@@ -225,9 +271,6 @@ a {
   font-size: 0.9rem;
 }
 
-.back:hover {
-  color: var(--text);
-}
 
 .splash {
   min-height: 100vh;
@@ -346,9 +389,6 @@ a {
   transition: border-color 0.15s, background 0.15s;
 }
 
-.card.link:hover {
-  border-color: var(--line-strong);
-}
 
 .card.link:active {
   background: var(--surface-2);
@@ -421,9 +461,6 @@ details.card[open] > summary {
   transform: scale(0.98);
 }
 
-.btn:hover:not(:disabled) {
-  background: #23252a;
-}
 
 .btn:disabled {
   opacity: 0.45;
@@ -446,9 +483,6 @@ details.card[open] > summary {
   color: var(--accent-ink);
 }
 
-.btn.primary:hover:not(:disabled) {
-  background: #00ad7d;
-}
 
 .btn.no {
   background: var(--no);
@@ -456,26 +490,19 @@ details.card[open] > summary {
   color: #1f0405;
 }
 
-.btn.no:hover:not(:disabled) {
-  background: #f04b50;
-}
 
 .btn.ghost {
   background: transparent;
   border-color: transparent;
 }
 
-.btn.ghost:hover:not(:disabled) {
-  background: var(--surface-2);
-}
 
 .btn.danger {
   border-color: rgba(255, 90, 95, 0.45);
   color: #ffc9cb;
 }
 
-.btn.armed,
-.btn.armed:hover:not(:disabled) {
+.btn.armed {
   background: var(--bad);
   border-color: var(--bad);
   color: #1f0405;
@@ -496,9 +523,6 @@ details.card[open] > summary {
   text-decoration: none;
 }
 
-.icon-btn:hover {
-  background: var(--surface-2);
-}
 
 .icon-btn svg {
   width: 1.3rem;
@@ -523,9 +547,6 @@ details.card[open] > summary {
   cursor: pointer;
 }
 
-.text-btn:hover {
-  color: var(--text);
-}
 
 .field {
   display: flex;
@@ -805,9 +826,6 @@ textarea {
   transition: border-color 0.15s;
 }
 
-.mcard:hover {
-  border-color: var(--line-strong);
-}
 
 .mcard-top {
   display: flex;
@@ -1095,9 +1113,6 @@ textarea {
   font-size: 1rem;
 }
 
-.btn.google:hover:not(:disabled) {
-  background: #e8e8e8;
-}
 
 .btn.google svg {
   width: 1.2rem;
@@ -1228,6 +1243,57 @@ textarea {
 @keyframes slide-up {
   from {
     transform: translateY(100%);
+  }
+}
+
+
+/* Hover only where there is a real pointer - on iPhone a tapped button
+   would otherwise stay in its hover state until the next tap elsewhere. */
+@media (hover: hover) {
+  .back:hover {
+  color: var(--text);
+  }
+
+  .card.link:hover {
+  border-color: var(--line-strong);
+  }
+
+  .btn:hover:not(:disabled) {
+  background: #23252a;
+  }
+
+  .btn.primary:hover:not(:disabled) {
+  background: #00ad7d;
+  }
+
+  .btn.no:hover:not(:disabled) {
+  background: #f04b50;
+  }
+
+  .btn.ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  }
+
+  .btn.armed:hover:not(:disabled) {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: #1f0405;
+  }
+
+  .icon-btn:hover {
+  background: var(--surface-2);
+  }
+
+  .text-btn:hover {
+  color: var(--text);
+  }
+
+  .mcard:hover {
+  border-color: var(--line-strong);
+  }
+
+  .btn.google:hover:not(:disabled) {
+  background: #e8e8e8;
   }
 }
 

@@ -2,6 +2,10 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './styles.css';
 
+// iOS Safari only applies :active styles (the press feedback on buttons and
+// cards) once the page has any touch listener. This one does nothing else.
+document.addEventListener('touchstart', () => {}, { passive: true });
+
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 
 // App is imported lazily so that a missing apps/web/.env - which makes lib/supabase.ts

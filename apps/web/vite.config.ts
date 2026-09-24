@@ -14,6 +14,9 @@ export default defineConfig({
       workbox: {
         navigateFallback: '/index.html',
         globPatterns: ['**/*.{js,css,html,png,svg,ico,webmanifest}'],
+        // iOS reads a launch image once, when the app is added to the Home
+        // Screen - precaching all ten sizes on every visit would be waste.
+        globIgnores: ['splash/**'],
         // Never cache a Supabase response. Odds, balances and bets change by the
         // second, and this is a betting app - a cached "you have $500" is a bug,
         // not a convenience. Only the app shell (JS/CSS/icons) is precached, so

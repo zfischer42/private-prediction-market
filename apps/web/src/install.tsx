@@ -38,12 +38,21 @@ export function isStandalone(): boolean {
   );
 }
 
-type Platform = 'ios' | 'android' | 'other';
+type Platform = 'ios' | 'ios-other-browser' | 'ios-in-app' | 'android' | 'other';
 
 function platform(): Platform {
   const ua = navigator.userAgent;
   // iPadOS reports itself as a Mac; touch points give it away.
-  if (/iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) return 'ios';
+  const ios = /iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
+  if (ios) {
+    // Links shared in a group chat often open in an app's built-in browser,
+    // which has no Add to Home Screen at all.
+    if (/FBAN|FBAV|Instagram|Snapchat|Line\/|LinkedInApp|musical_ly|Bytedance|Twitter|GSA\//i.test(ua)) {
+      return 'ios-in-app';
+    }
+    if (/CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua)) return 'ios-other-browser';
+    return 'ios';
+  }
   if (/android/i.test(ua)) return 'android';
   return 'other';
 }
@@ -116,7 +125,13 @@ export function InstallSheet({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // Otherwise iOS scrolls the page behind the sheet when a swipe overshoots it.
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = overflow;
+    };
   }, [onClose]);
 
   async function install() {
@@ -172,6 +187,40 @@ export function InstallSheet({ onClose }: { onClose: () => void }) {
             <li className="step">
               <p>
                 Leave <strong>Open as Web App</strong> on, then tap <strong>Add</strong>.
+              </p>
+            </li>
+          </ol>
+        ) : os === 'ios-in-app' ? (
+          <ol className="steps">
+            <li className="step">
+              <p>
+                This page is open inside another app, which can't add it to your Home Screen. Tap{' '}
+                <strong>•••</strong> (or the compass icon) and choose <strong>Open in Safari</strong>.
+              </p>
+            </li>
+            <li className="step">
+              <p>
+                In Safari, tap <strong>Show me</strong> again and follow the steps.
+              </p>
+            </li>
+          </ol>
+        ) : os === 'ios-other-browser' ? (
+          <ol className="steps">
+            <li className="step">
+              <p>
+                Tap <Glyph><ShareIcon /></Glyph> <strong>Share</strong> - in the address bar, or in
+                the browser's menu.
+              </p>
+            </li>
+            <li className="step">
+              <p>
+                Tap <Glyph><PlusSquareIcon /></Glyph> <strong>Add to Home Screen</strong>. If it
+                isn't listed, open this page in Safari instead.
+              </p>
+            </li>
+            <li className="step">
+              <p>
+                Tap <strong>Add</strong>.
               </p>
             </li>
           </ol>
