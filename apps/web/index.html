@@ -5,7 +5,12 @@
     <!-- viewport-fit=cover is what makes env(safe-area-inset-*) resolve to
          real numbers instead of 0 once this is installed full-screen on iOS. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#000000" />
+    <!-- Matches --bg in tokens.css for each theme; keep these three in sync
+         (this file, manifest.webmanifest, and tokens.css) when the palette
+         changes. Two tags with media queries so the browser/OS chrome
+         follows system light/dark even before the app's own toggle runs. -->
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#16120d" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf6ee" />
     <!-- iOS ignores manifest.json's display/theme for "Add to Home Screen" and
          needs its own meta tags to open standalone instead of inside Safari. -->
     <meta name="apple-mobile-web-app-capable" content="yes" />

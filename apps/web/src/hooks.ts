@@ -107,3 +107,54 @@ export function useNow(everyMs = 30_000): Date {
   }, [everyMs]);
   return now;
 }
+
+// ---- Theme (light/dark) ------------------------------------------------
+
+export type Theme = 'dark' | 'light';
+
+const THEME_KEY = 'ppm_theme';
+
+function systemTheme(): Theme {
+  return typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-color-scheme: light)').matches
+    ? 'light'
+    : 'dark';
+}
+
+function storedTheme(): Theme | null {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    return v === 'light' || v === 'dark' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+// Sets data-theme on <html> before React mounts, so there is no flash of
+// the wrong theme on load. Dark is the app's default identity; a saved
+// choice wins over that, and an explicit system preference for light wins
+// over the default when there is no saved choice yet.
+export function applyStoredTheme() {
+  const theme = storedTheme() ?? systemTheme();
+  document.documentElement.dataset.theme = theme;
+}
+
+// Drives a light/dark toggle: reflects the current theme and persists a
+// change to localStorage so it survives a reload.
+export function useTheme(): [Theme, (theme: Theme) => void] {
+  const [theme, setTheme] = useState<Theme>(
+    () => (document.documentElement.dataset.theme as Theme | undefined) ?? 'dark',
+  );
+
+  const set = useCallback((next: Theme) => {
+    document.documentElement.dataset.theme = next;
+    try {
+      localStorage.setItem(THEME_KEY, next);
+    } catch {
+      // No storage (private mode, etc.) - the choice just doesn't survive a reload.
+    }
+    setTheme(next);
+  }, []);
+
+  return [theme, set];
+}

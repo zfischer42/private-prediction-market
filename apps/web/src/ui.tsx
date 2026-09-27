@@ -5,8 +5,10 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import type { Tone } from './format';
 
 // ---- Toasts -----------------------------------------------------------
@@ -35,11 +37,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={push}>
       {children}
       <div className="toasts" role="status" aria-live="polite">
-        {items.map((t) => (
-          <div key={t.id} className={`toast ${t.kind}`}>
-            {t.text}
-          </div>
-        ))}
+        <AnimatePresence>
+          {items.map((t) => (
+            <motion.div
+              key={t.id}
+              className={`toast ${t.kind}`}
+              layout
+              initial={{ opacity: 0, y: 16, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+            >
+              {t.text}
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </ToastContext.Provider>
   );
@@ -64,6 +76,19 @@ export function Loading({ label = 'Loading...' }: { label?: string }) {
     <p className="muted center" role="status">
       {label}
     </p>
+  );
+}
+
+// A card-shaped placeholder for a whole screen's first load, so the page
+// doesn't flash from blank to "Loading..." to content. `lines` sets how
+// many bars and their relative widths.
+export function Skeleton({ lines = [100, 60, 80] }: { lines?: number[] }) {
+  return (
+    <div className="skeleton" role="status" aria-label="Loading">
+      {lines.map((w, i) => (
+        <div key={i} className="skeleton-line" style={{ '--w': `${w}%` } as CSSProperties} />
+      ))}
+    </div>
   );
 }
 

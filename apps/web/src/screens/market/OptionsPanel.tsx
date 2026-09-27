@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { canSubmitOption, submitOption, type Market } from '../../lib';
 import { useRunner } from '../../hooks';
-import { money, percent, plural, when } from '../../format';
+import { plural, when } from '../../format';
 import { Pill } from '../../ui';
+import { Money, Percent } from '../../num';
 import type { OptionRow } from './types';
 
 export default function OptionsPanel({
@@ -45,14 +46,18 @@ export default function OptionsPanel({
                 <strong>{r.label}</strong>
                 <span className="row">
                   {market.winning_option_id === r.id && <Pill tone="good">Winner</Pill>}
-                  {r.pct !== null && <span className="muted">{percent(r.pct)}</span>}
+                  {r.pct !== null && (
+                    <span className="muted">
+                      <Percent value={r.pct} />
+                    </span>
+                  )}
                 </span>
               </div>
               <div className="bar" role="presentation">
                 <span style={{ width: `${r.pct ?? 0}%` }} />
               </div>
               <p className="muted small">
-                {money(r.pool)} from {plural(r.betCount, 'bet')}
+                <Money value={r.pool} /> from {plural(r.betCount, 'bet')}
               </p>
             </li>
           ))}

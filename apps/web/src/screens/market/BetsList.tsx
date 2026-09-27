@@ -1,10 +1,48 @@
+import { useEffect, useRef } from 'react';
 import { voidBet, type Bet } from '../../lib';
 import { useRunner } from '../../hooks';
-import { betStatus, money, signedMoney, when } from '../../format';
+import { betStatus, money, when } from '../../format';
 import { ConfirmButton, Pill } from '../../ui';
+import { Money, SignedMoney } from '../../num';
+import { celebrateWin } from '../../celebrate';
 import type { NameOf, OptionRow } from './types';
 
+const CELEBRATED_KEY = 'ppm_celebrated_wins';
+
+function loadCelebrated(): Set<number> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(CELEBRATED_KEY) ?? '[]'));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCelebrated(ids: Set<number>) {
+  try {
+    localStorage.setItem(CELEBRATED_KEY, JSON.stringify([...ids]));
+  } catch {
+    // No storage (private mode, etc.) - the celebration just replays next visit.
+  }
+}
+
 export function MyBets({ bets, rows }: { bets: Bet[]; rows: OptionRow[] }) {
+  // Fires once, the first time this browser sees each of your bets as won -
+  // not on every refetch, and not for wins you already knew about.
+  const seenIds = useRef<string>('');
+  useEffect(() => {
+    const won = bets.filter((b) => b.status === 'won').map((b) => b.id);
+    const key = won.join(',');
+    if (key === seenIds.current) return;
+    seenIds.current = key;
+    if (won.length === 0) return;
+    const celebrated = loadCelebrated();
+    const fresh = won.filter((id) => !celebrated.has(id));
+    if (fresh.length === 0) return;
+    celebrateWin();
+    fresh.forEach((id) => celebrated.add(id));
+    saveCelebrated(celebrated);
+  }, [bets]);
+
   if (bets.length === 0) return null;
   const labels = new Map(rows.map((r) => [r.id, r.label]));
 
@@ -18,12 +56,16 @@ export function MyBets({ bets, rows }: { bets: Bet[]; rows: OptionRow[] }) {
             <li key={b.id} className="stack tight">
               <div className="spread">
                 <span>
-                  <strong>{labels.get(b.option_id) ?? 'Option'}</strong> - {money(b.amount)}
+                  <strong>{labels.get(b.option_id) ?? 'Option'}</strong> - <Money value={b.amount} />
                 </span>
                 <span className="row">
                   {b.status === 'pending' && b.was_late && <Pill tone="warn">Late</Pill>}
                   <Pill tone={status.tone}>{status.label}</Pill>
-                  {b.status === 'won' && <span className="gain">{signedMoney(b.payout - b.amount)}</span>}
+                  {b.status === 'won' && (
+                    <span className="gain">
+                      <SignedMoney value={b.payout - b.amount} />
+                    </span>
+                  )}
                 </span>
               </div>
               {b.status === 'pending' && b.was_late && (

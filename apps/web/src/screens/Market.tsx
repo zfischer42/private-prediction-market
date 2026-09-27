@@ -20,7 +20,7 @@ import {
 import { useMe, useNow, useResource, useRunner } from '../hooks';
 import { Link, navigate } from '../router';
 import { kindLabel, phaseOf, when } from '../format';
-import { ConfirmButton, ErrorNote, Loading, Pill } from '../ui';
+import { ConfirmButton, ErrorNote, Pill, Skeleton } from '../ui';
 import OptionsPanel from './market/OptionsPanel';
 import BetPanel from './market/BetPanel';
 import { AllBets, MyBets } from './market/BetsList';
@@ -31,7 +31,7 @@ import type { NameOf, OptionRow } from './market/types';
 export default function MarketScreen({ marketId }: { marketId: number }) {
   const market = useResource(() => getMarketWithOptions(marketId), [marketId]);
 
-  if (market.loading) return <Loading />;
+  if (market.loading) return <Skeleton lines={[40, 90, 70, 55]} />;
   if (!market.data) {
     return (
       <div className="stack">
@@ -84,7 +84,7 @@ function MarketView({
     return (id) => (id === me.id ? 'You' : (byId.get(id) ?? 'Someone'));
   }, [members.data, me.id]);
 
-  if (circle.loading || membership.loading) return <Loading />;
+  if (circle.loading || membership.loading) return <Skeleton lines={[40, 90, 70, 55]} />;
   if (!circle.data || !membership.data) {
     return (
       <div className="stack">
