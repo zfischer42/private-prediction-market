@@ -1,15 +1,17 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { getNotifications, signOut } from './lib';
-import { MeContext, useAuthUser, useMe, useTheme } from './hooks';
+import { getNotifications } from './lib';
+import { MeContext, profileOf, useAuthUser, useMe } from './hooks';
 import { Link, match, navigate, takeReturnTo, toId, usePath } from './router';
-import { Loading, ToastProvider, useToast } from './ui';
+import { Loading, ToastProvider } from './ui';
+import { BellIcon } from './icons';
 import SignIn from './screens/SignIn';
 import Circles from './screens/Circles';
 import CircleScreen from './screens/Circle';
 import NewMarket from './screens/NewMarket';
 import MarketScreen from './screens/Market';
 import Notifications from './screens/Notifications';
+import Profile from './screens/Profile';
 
 export default function App() {
   return (
@@ -75,6 +77,8 @@ function Routes() {
 
   if (match('/notifications', path)) return <Notifications />;
 
+  if (match('/profile', path)) return <Profile />;
+
   return (
     <div className="stack">
       <h1>Page not found</h1>
@@ -82,48 +86,6 @@ function Routes() {
         Back to your circles
       </Link>
     </div>
-  );
-}
-
-// A plain sun/moon glyph, not an icon-set dependency - this is the only
-// icon the app needs today. Reach for a real icon set (see DESIGN.md)
-// before a second one shows up.
-function ThemeIcon({ theme }: { theme: 'dark' | 'light' }) {
-  if (theme === 'dark') {
-    return (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <circle cx="8" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.4" />
-        <path
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinecap="round"
-          d="M8 0.75v2M8 13.25v2M15.25 8h-2M2.75 8h-2M13.03 2.97l-1.41 1.41M4.38 11.62l-1.41 1.41M13.03 13.03l-1.41-1.41M4.38 4.38 2.97 2.97"
-        />
-      </svg>
-    );
-  }
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M13.5 9.7A5.75 5.75 0 0 1 6.3 2.5a5.75 5.75 0 1 0 7.2 7.2Z"
-      />
-    </svg>
-  );
-}
-
-function BellIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M4 6.5a4 4 0 0 1 8 0c0 2.7.6 4 1.3 4.75.2.2.05.55-.23.55H2.93c-.28 0-.42-.35-.23-.55C3.4 10.5 4 9.2 4 6.5Z"
-      />
-      <path stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" d="M6.5 13.5a1.5 1.5 0 0 0 3 0" />
-    </svg>
   );
 }
 
@@ -193,20 +155,11 @@ function InstallHint() {
 }
 
 function Shell({ children }: { children: ReactNode }) {
-  const toast = useToast();
   const path = usePath();
   const [unread, setUnread] = useState(0);
   const me = useMe();
-  const meta = (me.user_metadata ?? {}) as Record<string, unknown>;
-  const fullName = [meta.full_name, meta.name].find((v) => typeof v === 'string' && v) as
-    | string
-    | undefined;
-  const firstName = (fullName ?? me.email ?? '').split(/[\s@]/)[0];
-  const avatar = [meta.avatar_url, meta.picture].find((v) => typeof v === 'string' && v) as
-    | string
-    | undefined;
+  const { firstName, avatarUrl } = profileOf(me);
   const [avatarBroken, setAvatarBroken] = useState(false);
-  const [theme, setTheme] = useTheme();
 
   // Notifications are not published to realtime, so refresh the badge as the person moves around.
   useEffect(() => {
@@ -219,12 +172,6 @@ function Shell({ children }: { children: ReactNode }) {
     };
   }, [path]);
 
-  async function onSignOut() {
-    const res = await signOut();
-    if (res.error !== undefined) toast(res.error, 'error');
-    else navigate('/', { replace: true });
-  }
-
   return (
     <>
       <header className="topbar">
@@ -233,22 +180,6 @@ function Shell({ children }: { children: ReactNode }) {
             Private Market
           </Link>
           <nav className="row">
-            <span className="whoami" title={me.email ?? undefined}>
-              {avatar && !avatarBroken ? (
-                <img
-                  className="avatar"
-                  src={avatar}
-                  alt=""
-                  referrerPolicy="no-referrer"
-                  onError={() => setAvatarBroken(true)}
-                />
-              ) : (
-                <span className="avatar avatar-fallback" aria-hidden="true">
-                  {firstName.charAt(0).toUpperCase()}
-                </span>
-              )}
-              {firstName && <span className="whoami-name">Welcome, {firstName}</span>}
-            </span>
             <Link
               to="/notifications"
               className="btn small ghost icon-btn"
@@ -258,18 +189,22 @@ function Shell({ children }: { children: ReactNode }) {
               <BellIcon />
               {unread > 0 && <span className="badge badge-corner">{unread > 99 ? '99+' : unread}</span>}
             </Link>
-            <button
-              type="button"
-              className="btn small ghost icon-btn"
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            >
-              <ThemeIcon theme={theme} />
-            </button>
-            <button type="button" className="btn small ghost" onClick={onSignOut}>
-              Sign out
-            </button>
+            <Link to="/profile" className="whoami" title="Profile">
+              {avatarUrl && !avatarBroken ? (
+                <img
+                  className="avatar"
+                  src={avatarUrl}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  onError={() => setAvatarBroken(true)}
+                />
+              ) : (
+                <span className="avatar avatar-fallback" aria-hidden="true">
+                  {firstName.charAt(0).toUpperCase()}
+                </span>
+              )}
+              <span className="whoami-name">Profile</span>
+            </Link>
           </nav>
         </div>
       </header>

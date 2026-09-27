@@ -28,6 +28,30 @@ export function useMe(): User {
   return me;
 }
 
+export interface DisplayProfile {
+  fullName: string | undefined;
+  firstName: string;
+  avatarUrl: string | undefined;
+  provider: string | undefined;
+}
+
+// The bits of `me` that show up as a person rather than a row - the topbar
+// and the profile screen both need this and should never disagree about it.
+// Google is the only sign-in provider today, so `full_name`/`avatar_url`
+// (Supabase's own naming) and `name`/`picture` (Google's) are both checked.
+export function profileOf(me: User): DisplayProfile {
+  const meta = (me.user_metadata ?? {}) as Record<string, unknown>;
+  const fullName = [meta.full_name, meta.name].find((v) => typeof v === 'string' && v) as
+    | string
+    | undefined;
+  const firstName = (fullName ?? me.email ?? '').split(/[\s@]/)[0];
+  const avatarUrl = [meta.avatar_url, meta.picture].find((v) => typeof v === 'string' && v) as
+    | string
+    | undefined;
+  const provider = me.app_metadata?.provider as string | undefined;
+  return { fullName, firstName, avatarUrl, provider };
+}
+
 // ---- Loading data -----------------------------------------------------
 
 export interface Resource<T> {
