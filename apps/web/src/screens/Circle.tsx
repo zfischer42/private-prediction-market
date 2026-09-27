@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { getCircle, getMembers, getMyMembership } from '../lib';
 import { useResource } from '../hooks';
 import { Link } from '../router';
-import { money } from '../format';
-import { ErrorNote, Loading, useToast } from '../ui';
+import { ErrorNote, Skeleton, useToast } from '../ui';
+import { Money } from '../num';
 import MarketsTab from './circle/MarketsTab';
 import StandingsTab from './circle/StandingsTab';
 import ChatTab from './circle/ChatTab';
@@ -24,7 +25,7 @@ export default function CircleScreen({ circleId }: { circleId: number }) {
     return (id: string) => (id === me.data?.user_id ? 'You' : (byId.get(id) ?? 'Someone'));
   }, [members.data, me.data?.user_id]);
 
-  if (circle.loading || me.loading) return <Loading />;
+  if (circle.loading || me.loading) return <Skeleton lines={[50, 90, 40, 40, 40]} />;
   if (!circle.data) {
     return (
       <div className="stack">
@@ -69,7 +70,9 @@ export default function CircleScreen({ circleId }: { circleId: number }) {
       <div className="card spread">
         <div>
           <span className="label">Your balance</span>
-          <strong className="big">{money(membership.balance)}</strong>
+          <strong className="big">
+            <Money value={membership.balance} />
+          </strong>
         </div>
         <div className="right">
           <span className="label">Invite code</span>
@@ -90,28 +93,44 @@ export default function CircleScreen({ circleId }: { circleId: number }) {
             onClick={() => setTab(key)}
           >
             {label}
+            {tab === key && (
+              <motion.span
+                layoutId="tab-indicator"
+                className="tab-indicator"
+                transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+              />
+            )}
           </button>
         ))}
       </div>
 
       <div role="tabpanel">
-        {tab === 'markets' && <MarketsTab circleId={circleId} />}
-        {tab === 'standings' && <StandingsTab circleId={circleId} myId={membership.user_id} />}
-        {tab === 'chat' && <ChatTab circleId={circleId} nameOf={nameOf} myId={membership.user_id} />}
-        {tab === 'members' && (
-          <MembersTab
-            circle={circle.data}
-            me={membership}
-            onChanged={() => void me.reload()}
-          />
-        )}
-        {tab === 'settings' && isAdmin && (
-          <SettingsTab
-            circle={circle.data}
-            onSaved={() => void circle.reload()}
-            onSeasonReset={() => void me.reload()}
-          />
-        )}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={tab}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.15 }}
+          >
+            {tab === 'markets' && <MarketsTab circleId={circleId} />}
+            {tab === 'standings' && <StandingsTab circleId={circleId} myId={membership.user_id} />}
+            {tab === 'chat' && <ChatTab circleId={circleId} nameOf={nameOf} myId={membership.user_id} />}
+            {tab === 'members' && (
+              <MembersTab
+                circle={circle.data}
+                me={membership}
+                onChanged={() => void me.reload()}
+              />
+            )}
+            {tab === 'settings' && isAdmin && (
+              <SettingsTab
+                circle={circle.data}
+                onSaved={() => void circle.reload()}
+                onSeasonReset={() => void me.reload()}
+              />
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </div>
   );

@@ -1,14 +1,17 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { getNotifications, signOut } from './lib';
-import { MeContext, useAuthUser, useMe } from './hooks';
+import { AnimatePresence, motion } from 'motion/react';
+import { getNotifications } from './lib';
+import { MeContext, profileOf, useAuthUser, useMe } from './hooks';
 import { Link, match, navigate, takeReturnTo, toId, usePath } from './router';
-import { Loading, ToastProvider, useToast } from './ui';
+import { Loading, ToastProvider } from './ui';
+import { BellIcon } from './icons';
 import SignIn from './screens/SignIn';
 import Circles from './screens/Circles';
 import CircleScreen from './screens/Circle';
 import NewMarket from './screens/NewMarket';
 import MarketScreen from './screens/Market';
 import Notifications from './screens/Notifications';
+import Profile from './screens/Profile';
 
 export default function App() {
   return (
@@ -73,6 +76,8 @@ function Routes() {
   if (marketId) return <MarketScreen key={marketId} marketId={marketId} />;
 
   if (match('/notifications', path)) return <Notifications />;
+
+  if (match('/profile', path)) return <Profile />;
 
   return (
     <div className="stack">
@@ -150,18 +155,10 @@ function InstallHint() {
 }
 
 function Shell({ children }: { children: ReactNode }) {
-  const toast = useToast();
   const path = usePath();
   const [unread, setUnread] = useState(0);
   const me = useMe();
-  const meta = (me.user_metadata ?? {}) as Record<string, unknown>;
-  const fullName = [meta.full_name, meta.name].find((v) => typeof v === 'string' && v) as
-    | string
-    | undefined;
-  const firstName = (fullName ?? me.email ?? '').split(/[\s@]/)[0];
-  const avatar = [meta.avatar_url, meta.picture].find((v) => typeof v === 'string' && v) as
-    | string
-    | undefined;
+  const { firstName, avatarUrl } = profileOf(me);
   const [avatarBroken, setAvatarBroken] = useState(false);
 
   // Notifications are not published to realtime, so refresh the badge as the person moves around.
@@ -175,12 +172,6 @@ function Shell({ children }: { children: ReactNode }) {
     };
   }, [path]);
 
-  async function onSignOut() {
-    const res = await signOut();
-    if (res.error !== undefined) toast(res.error, 'error');
-    else navigate('/', { replace: true });
-  }
-
   return (
     <>
       <header className="topbar">
@@ -189,11 +180,20 @@ function Shell({ children }: { children: ReactNode }) {
             Private Market
           </Link>
           <nav className="row">
-            <span className="whoami" title={me.email ?? undefined}>
-              {avatar && !avatarBroken ? (
+            <Link
+              to="/notifications"
+              className="btn small ghost icon-btn"
+              aria-label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
+              title={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
+            >
+              <BellIcon />
+              {unread > 0 && <span className="badge badge-corner">{unread > 99 ? '99+' : unread}</span>}
+            </Link>
+            <Link to="/profile" className="whoami" title="Profile">
+              {avatarUrl && !avatarBroken ? (
                 <img
                   className="avatar"
-                  src={avatar}
+                  src={avatarUrl}
                   alt=""
                   referrerPolicy="no-referrer"
                   onError={() => setAvatarBroken(true)}
@@ -203,23 +203,23 @@ function Shell({ children }: { children: ReactNode }) {
                   {firstName.charAt(0).toUpperCase()}
                 </span>
               )}
-              {firstName && <span className="whoami-name">Welcome, {firstName}</span>}
-            </span>
-            <Link
-              to="/notifications"
-              className="btn small ghost"
-              aria-label={unread > 0 ? `Alerts, ${unread} unread` : 'Alerts'}
-            >
-              Alerts
-              {unread > 0 && <span className="badge">{unread}</span>}
+              <span className="whoami-name">Profile</span>
             </Link>
-            <button type="button" className="btn small ghost" onClick={onSignOut}>
-              Sign out
-            </button>
           </nav>
         </div>
       </header>
-      <main className="container">{children}</main>
+      <main className="container">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={path}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+          >
+            {children}
+          </motion.div>
+        </AnimatePresence>
+      </main>
     </>
   );
 }

@@ -1,9 +1,95 @@
 import { useState, type FormEvent } from 'react';
-import { createCircle, getMyCircles, joinCircle } from '../lib';
+import {
+  getMarketBets,
+  getMarkets,
+  getOdds,
+  isBettingOpen,
+  createCircle,
+  getMyCircles,
+  joinCircle,
+  type Bet,
+  type Market,
+  type MarketOdds,
+  type MarketOption,
+  type Result,
+} from '../lib';
 import { useResource, useRunner } from '../hooks';
 import { Link, navigate } from '../router';
-import { money } from '../format';
+import { money, phaseOf } from '../format';
 import { Empty, ErrorNote, Loading, Pill } from '../ui';
+import { Percent } from '../num';
+import { OddsBars } from '../oddsbars';
+import { computeOddsHistory, Sparkline } from '../sparkline';
+
+// The newest market in a circle, plus enough to show its live odds and a
+// trend line - three small reads composed into the one thing a home-card
+// preview needs, the same way loadStandings() does in StandingsTab.tsx.
+type LatestMarket = {
+  market: Market & { options: MarketOption[] };
+  odds: MarketOdds[];
+  bets: Bet[];
+};
+
+// Among the circle's recently created markets, an open one wins even if a
+// newer market has already been resolved - a settled market's odds are a
+// dead number, not the "what's happening" a home card should lead with.
+// Falls back to the single newest market when nothing is open right now.
+async function loadLatestMarket(circleId: number): Promise<Result<LatestMarket | null>> {
+  const markets = await getMarkets(circleId, { orderBy: 'created_at', limit: 20 });
+  if (markets.error !== undefined) return { error: markets.error };
+  if (markets.data.length === 0) return { data: null };
+
+  const now = new Date();
+  const market = markets.data.find((m) => isBettingOpen(m, now)) ?? markets.data[0];
+
+  const [odds, bets] = await Promise.all([getOdds(market.id), getMarketBets(market.id)]);
+  if (odds.error !== undefined) return { error: odds.error };
+  if (bets.error !== undefined) return { error: bets.error };
+  return { data: { market, odds: odds.data, bets: bets.data } };
+}
+
+function LatestMarketPreview({ circleId }: { circleId: number }) {
+  const preview = useResource(() => loadLatestMarket(circleId), [circleId]);
+  if (preview.loading || !preview.data || preview.error) return null;
+
+  const { market, odds, bets } = preview.data;
+  const rows = [...market.options]
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((o) => ({ id: o.id, label: o.label, pct: odds.find((x) => x.option_id === o.id)?.pct ?? null }));
+
+  let leading: { id: number; label: string; pct: number } | null = null;
+  for (const r of rows) {
+    if (r.pct !== null && (leading === null || r.pct > leading.pct)) {
+      leading = { id: r.id, label: r.label, pct: r.pct };
+    }
+  }
+
+  const history = computeOddsHistory(
+    market.options.map((o) => ({ id: o.id, label: o.label })),
+    bets,
+  );
+  const leadingPoints = history?.find((s) => s.optionId === leading?.id)?.points;
+  const phase = phaseOf(market);
+
+  return (
+    <div className="market-preview">
+      <span className="label">Latest market</span>
+      <div className="spread">
+        <p className="clamp-2 small grow">{market.question}</p>
+        <Pill tone={phase.tone}>{phase.label}</Pill>
+      </div>
+      {leading ? (
+        <span className="muted small">
+          {leading.label} &middot; <Percent value={Math.round(leading.pct)} />
+        </span>
+      ) : (
+        <span className="hint small">No bets yet.</span>
+      )}
+      {leadingPoints && <Sparkline points={leadingPoints} />}
+      {rows.length > 0 && <OddsBars rows={rows} winningOptionId={market.winning_option_id} />}
+    </div>
+  );
+}
 
 export default function Circles() {
   const circles = useResource(() => getMyCircles(), []);
@@ -47,6 +133,7 @@ export default function Circles() {
                 {row.role === 'admin' && <Pill tone="accent">Admin</Pill>}
               </div>
               <p className="muted">{money(row.balance)}</p>
+              <LatestMarketPreview circleId={row.circle_id} />
             </Link>
           </li>
         ))}

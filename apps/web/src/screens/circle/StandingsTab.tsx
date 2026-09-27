@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { getLeaderboard, getSeasonLeaderboard, getSeasons, type Result } from '../../lib';
 import { useResource } from '../../hooks';
-import { money, percent, signedMoney } from '../../format';
 import { Empty, ErrorNote, Loading } from '../../ui';
+import { Money, Percent, SignedMoney } from '../../num';
 
 // The all-time and per-season boards share these columns.
 type Standing = {
@@ -72,14 +72,23 @@ export default function StandingsTab({ circleId, myId }: { circleId: number; myI
                 <strong>{row.display_name ?? 'Someone'}</strong>
                 {row.user_id === myId && <span className="muted"> (you)</span>}
                 <p className="muted">
-                  {row.bets_settled === 0
-                    ? 'No settled bets yet'
-                    : `${row.bets_won} of ${row.bets_settled} won (${percent(row.win_pct)})`}
-                  {row.balance !== undefined && ` - ${money(row.balance)}`}
+                  {row.bets_settled === 0 ? (
+                    'No settled bets yet'
+                  ) : (
+                    <>
+                      {row.bets_won} of {row.bets_settled} won (<Percent value={row.win_pct} />)
+                    </>
+                  )}
+                  {row.balance !== undefined && (
+                    <>
+                      {' - '}
+                      <Money value={row.balance} />
+                    </>
+                  )}
                 </p>
               </div>
               <strong className={row.net_profit > 0 ? 'gain' : row.net_profit < 0 ? 'loss' : ''}>
-                {signedMoney(row.net_profit)}
+                <SignedMoney value={row.net_profit} />
               </strong>
             </li>
           ))}

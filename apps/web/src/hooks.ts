@@ -28,6 +28,30 @@ export function useMe(): User {
   return me;
 }
 
+export interface DisplayProfile {
+  fullName: string | undefined;
+  firstName: string;
+  avatarUrl: string | undefined;
+  provider: string | undefined;
+}
+
+// The bits of `me` that show up as a person rather than a row - the topbar
+// and the profile screen both need this and should never disagree about it.
+// Google is the only sign-in provider today, so `full_name`/`avatar_url`
+// (Supabase's own naming) and `name`/`picture` (Google's) are both checked.
+export function profileOf(me: User): DisplayProfile {
+  const meta = (me.user_metadata ?? {}) as Record<string, unknown>;
+  const fullName = [meta.full_name, meta.name].find((v) => typeof v === 'string' && v) as
+    | string
+    | undefined;
+  const firstName = (fullName ?? me.email ?? '').split(/[\s@]/)[0];
+  const avatarUrl = [meta.avatar_url, meta.picture].find((v) => typeof v === 'string' && v) as
+    | string
+    | undefined;
+  const provider = me.app_metadata?.provider as string | undefined;
+  return { fullName, firstName, avatarUrl, provider };
+}
+
 // ---- Loading data -----------------------------------------------------
 
 export interface Resource<T> {
@@ -106,4 +130,55 @@ export function useNow(everyMs = 30_000): Date {
     return () => window.clearInterval(t);
   }, [everyMs]);
   return now;
+}
+
+// ---- Theme (light/dark) ------------------------------------------------
+
+export type Theme = 'dark' | 'light';
+
+const THEME_KEY = 'ppm_theme';
+
+function systemTheme(): Theme {
+  return typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-color-scheme: light)').matches
+    ? 'light'
+    : 'dark';
+}
+
+function storedTheme(): Theme | null {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    return v === 'light' || v === 'dark' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+// Sets data-theme on <html> before React mounts, so there is no flash of
+// the wrong theme on load. Dark is the app's default identity; a saved
+// choice wins over that, and an explicit system preference for light wins
+// over the default when there is no saved choice yet.
+export function applyStoredTheme() {
+  const theme = storedTheme() ?? systemTheme();
+  document.documentElement.dataset.theme = theme;
+}
+
+// Drives a light/dark toggle: reflects the current theme and persists a
+// change to localStorage so it survives a reload.
+export function useTheme(): [Theme, (theme: Theme) => void] {
+  const [theme, setTheme] = useState<Theme>(
+    () => (document.documentElement.dataset.theme as Theme | undefined) ?? 'dark',
+  );
+
+  const set = useCallback((next: Theme) => {
+    document.documentElement.dataset.theme = next;
+    try {
+      localStorage.setItem(THEME_KEY, next);
+    } catch {
+      // No storage (private mode, etc.) - the choice just doesn't survive a reload.
+    }
+    setTheme(next);
+  }, []);
+
+  return [theme, set];
 }

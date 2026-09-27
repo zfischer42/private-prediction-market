@@ -1,0 +1,98 @@
+/* ---- Design tokens ----------------------------------------------------
+   Single source of truth for color, type and shape. Nothing outside this
+   file should declare a raw hex/rgb color, a font stack, or a radius -
+   reference these variables instead so the app reads as one system and a
+   palette change happens in one place. See /DESIGN.md for the brief this
+   is built from.
+
+   Theme: defaults to dark; `<html data-theme="light">` (set by useTheme(),
+   see src/hooks.ts) switches to the light block below. Both blocks define
+   the exact same variable names so nothing else needs to know a theme
+   exists.
+------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: dark;
+
+  /* Betting-slip identity: warm near-black instead of true black, and a
+     gold/amber accent instead of the generic dark-app blue. Neutrals carry
+     a slight warm tint (a soft-white overlay on a warm base) rather than
+     being pure grey, so the whole surface reads as one warm palette. */
+  --bg: #16120d;
+  --bg-rgb: 22, 18, 13;
+  --surface: rgba(255, 250, 240, 0.07);
+  --field: rgba(255, 250, 240, 0.035);
+  --line: rgba(255, 250, 240, 0.13);
+  --line-strong: rgba(255, 250, 240, 0.24);
+  --text: #f6f1e7;
+  --muted: #a89d8c;
+
+  --accent: #f2b90b;
+  --accent-fill: #b45309;
+  --accent-fill-hover: #9a4508;
+  --accent-soft: #f7d585;
+  --accent-rgb: 242, 185, 11;
+
+  --good: #3ecf8e;
+  --good-rgb: 62, 207, 142;
+  --warn: #f97316;
+  --warn-rgb: 249, 115, 22;
+  --bad: #f2685c;
+  --bad-rgb: 242, 104, 92;
+  --bad-text-on-fill: #1c0a06;
+
+  --neutral-rgb: 168, 157, 140; /* --muted as an rgb triple, for translucent chips/bars */
+
+  /* Kept small and uniform on purpose - a card, a button and a tag all read
+     as one system this way, instead of the soft, everything-is-a-capsule
+     look that reads as a generic template rather than this app's own design. */
+  --radius: 0.5rem;
+  --radius-sm: 0.375rem;
+
+  /* Body/UI face is a warmer, less-default sans than Inter; the numeric
+     face is used wherever a value is the point (balances, odds, ranks) so
+     "numbers are the hero" is a real, visible rule, not just a slogan. */
+  --font-sans:
+    'Manrope Variable', Manrope, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-num:
+    'Space Grotesk Variable', 'Space Grotesk', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #faf6ee;
+  --bg-rgb: 250, 246, 238;
+  --surface: rgba(35, 25, 12, 0.045);
+  --field: rgba(35, 25, 12, 0.03);
+  --line: rgba(35, 25, 12, 0.12);
+  --line-strong: rgba(35, 25, 12, 0.22);
+  --text: #241c11;
+  --muted: #786c5c;
+
+  /* Same hues as dark, darkened for AA contrast against a light background -
+     --accent-fill stays the same value in both themes since it's already a
+     solid button fill with white text, not text-on-background. */
+  --accent: #9a6a08;
+  --accent-fill: #b45309;
+  --accent-fill-hover: #96420a;
+  --accent-soft: #7a530a;
+  --accent-rgb: 154, 106, 8;
+
+  --good: #1f9d5f;
+  --good-rgb: 31, 157, 95;
+  --warn: #c2540a;
+  --warn-rgb: 194, 84, 10;
+  --bad: #c8362a;
+  --bad-rgb: 200, 54, 42;
+  --bad-text-on-fill: #fdf1ef;
+
+  --neutral-rgb: 120, 108, 92;
+}

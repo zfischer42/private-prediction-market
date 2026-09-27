@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { placeBet, projectedPayout, type Market } from '../../lib';
 import { useRunner } from '../../hooks';
-import { money, percent } from '../../format';
+import { money } from '../../format';
 import { useToast } from '../../ui';
+import { Money, Percent } from '../../num';
+import { celebrateBet } from '../../celebrate';
 import type { OptionRow } from './types';
 
 const QUICK_AMOUNTS = [10, 25, 50, 100];
@@ -56,6 +58,7 @@ export default function BetPanel({
     }
     const res = await runner.run(() => placeBet(market.id, optionId, stake));
     if (res.error === undefined) {
+      celebrateBet();
       toast(`Bet placed. You have ${money(res.data)} left.`);
       setAmount('');
       onPlaced();
@@ -66,7 +69,9 @@ export default function BetPanel({
     <form className="card stack" onSubmit={onSubmit}>
       <div className="spread">
         <h2>Place a bet</h2>
-        <span className="muted">You have {money(balance)}</span>
+        <span className="muted">
+          You have <Money value={balance} />
+        </span>
       </div>
 
       <div className="chips" role="radiogroup" aria-label="Option">
@@ -80,7 +85,12 @@ export default function BetPanel({
             onClick={() => setOptionId(r.id)}
           >
             {r.label}
-            {r.pct !== null && <span className="muted"> {percent(r.pct)}</span>}
+            {r.pct !== null && (
+              <span className="muted">
+                {' '}
+                <Percent value={r.pct} />
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -108,7 +118,7 @@ export default function BetPanel({
 
       {chosen && estimate !== null && (
         <p className="hint">
-          If {chosen.label} wins you would collect about {money(estimate)}
+          If {chosen.label} wins you would collect about <Money value={estimate} />
           {estimate === stake ? ' - nobody has bet against it yet, so that is just your stake back' : ''}.
           It moves as others bet.
         </p>
