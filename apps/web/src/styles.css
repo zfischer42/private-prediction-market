@@ -124,6 +124,44 @@ a {
   text-decoration: none;
 }
 
+.whoami {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.whoami-name {
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.avatar {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--line);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+@media (max-width: 480px) {
+  .whoami-name {
+    display: none;
+  }
+}
+
 .stack {
   display: flex;
   flex-direction: column;

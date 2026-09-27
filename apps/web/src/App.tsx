@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { getNotifications, signOut } from './lib';
-import { MeContext, useAuthUser } from './hooks';
+import { MeContext, useAuthUser, useMe } from './hooks';
 import { Link, match, navigate, takeReturnTo, toId, usePath } from './router';
 import { Loading, ToastProvider, useToast } from './ui';
 import SignIn from './screens/SignIn';
@@ -153,6 +153,16 @@ function Shell({ children }: { children: ReactNode }) {
   const toast = useToast();
   const path = usePath();
   const [unread, setUnread] = useState(0);
+  const me = useMe();
+  const meta = (me.user_metadata ?? {}) as Record<string, unknown>;
+  const fullName = [meta.full_name, meta.name].find((v) => typeof v === 'string' && v) as
+    | string
+    | undefined;
+  const firstName = (fullName ?? me.email ?? '').split(/[\s@]/)[0];
+  const avatar = [meta.avatar_url, meta.picture].find((v) => typeof v === 'string' && v) as
+    | string
+    | undefined;
+  const [avatarBroken, setAvatarBroken] = useState(false);
 
   // Notifications are not published to realtime, so refresh the badge as the person moves around.
   useEffect(() => {
@@ -179,6 +189,22 @@ function Shell({ children }: { children: ReactNode }) {
             Private Market
           </Link>
           <nav className="row">
+            <span className="whoami" title={me.email ?? undefined}>
+              {avatar && !avatarBroken ? (
+                <img
+                  className="avatar"
+                  src={avatar}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  onError={() => setAvatarBroken(true)}
+                />
+              ) : (
+                <span className="avatar avatar-fallback" aria-hidden="true">
+                  {firstName.charAt(0).toUpperCase()}
+                </span>
+              )}
+              {firstName && <span className="whoami-name">Welcome, {firstName}</span>}
+            </span>
             <Link
               to="/notifications"
               className="btn small ghost"
