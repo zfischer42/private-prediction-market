@@ -172,7 +172,7 @@ export function submitOption(
 // Reading
 // ---------------------------------------------------------------------
 
-// Markets in a circle, newest close date first.
+// Markets in a circle, newest close date first by default.
 //
 // Careful with `status`: a cron job advances it, so it can lag by a minute
 // or two. For "can I still bet on this?" compare closes_at to now instead,
@@ -181,13 +181,19 @@ export function submitOption(
 // without knowing what a person would actually be picking between.
 export function getMarkets(
   circleId: number,
-  opts: { status?: MarketStatus | MarketStatus[]; limit?: number } = {},
+  opts: {
+    status?: MarketStatus | MarketStatus[];
+    limit?: number;
+    // 'created_at' for "what's new" (a home screen preview); the default
+    // 'closes_at' is for "what needs my attention" (the markets tab).
+    orderBy?: 'closes_at' | 'created_at';
+  } = {},
 ): Promise<Result<Array<Market & { options: MarketOption[] }>>> {
   let query = supabase
     .from('markets')
     .select('*, options:market_options!market_options_market_id_fkey(*)')
     .eq('circle_id', circleId)
-    .order('closes_at', { ascending: false })
+    .order(opts.orderBy ?? 'closes_at', { ascending: false })
     .limit(opts.limit ?? 50);
   if (Array.isArray(opts.status)) query = query.in('status', opts.status);
   else if (opts.status) query = query.eq('status', opts.status);

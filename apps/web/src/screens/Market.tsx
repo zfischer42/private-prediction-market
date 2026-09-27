@@ -171,7 +171,7 @@ function MarketView({
             {when(market.event_end_at ?? market.closes_at)}.</>}
       </p>
 
-      <OptionsPanel market={market} rows={rows} now={now} onChanged={refreshAll} />
+      <OptionsPanel market={market} rows={rows} bets={allBets} now={now} onChanged={refreshAll} />
 
       {!settled && (
         <BetPanel

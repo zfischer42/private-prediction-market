@@ -83,6 +83,27 @@ transitions/keyframes already check it themselves; `celebrate.ts` checks it
 explicitly before calling `confetti()` (the vibration alone still fires -
 haptic feedback isn't motion).
 
+## Charts
+
+`src/sparkline.tsx` reconstructs odds-over-time client-side from existing bet
+rows (no new backend endpoint) and renders it two ways:
+
+- **Home-card sparkline** (`Sparkline`): one line only - the leading option's
+  trend - the stat-tile pattern (value + trend), decorative and
+  `aria-hidden`. The adjacent `<Percent>` text is already the accessible
+  value; the line adds momentum, not new information.
+- **Per-market chart** (`OddsHistoryChart`, in `OptionsPanel.tsx`): every
+  option, but still "emphasis" color (leader in `--accent`, the field in
+  `--muted`) rather than a categorical palette - this app has no validated
+  categorical palette, and 2-6 near-identical option lines don't need one.
+  Each line is end-labeled with its option name + current `<Percent>` in text
+  tokens (never the line's own color, per the usual "text never wears the
+  data color" rule); the chart itself is `aria-hidden`, with a `.sr-only`
+  paragraph carrying the real text-equivalent (start % -> end % per option).
+
+Both return `null` below two bet events rather than drawing a flat or empty
+line - "not enough happened yet" is a sentence, not a chart.
+
 ## Next steps (not yet done)
 
 - Extract `apps/web/src/ui.tsx` primitives into `packages/ui` as the shared

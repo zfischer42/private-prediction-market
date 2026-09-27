@@ -1,19 +1,39 @@
 import { useState, type FormEvent } from 'react';
-import { canSubmitOption, submitOption, type Market } from '../../lib';
+import { canSubmitOption, submitOption, type Bet, type Market } from '../../lib';
 import { useRunner } from '../../hooks';
 import { plural, when } from '../../format';
-import { Pill } from '../../ui';
-import { Money, Percent } from '../../num';
+import { Money } from '../../num';
+import { OddsBars } from '../../oddsbars';
+import { computeOddsHistory, OddsHistoryChart } from '../../sparkline';
 import type { OptionRow } from './types';
+
+function OddsOverTime({ rows, bets }: { rows: OptionRow[]; bets: Bet[] }) {
+  const history = computeOddsHistory(
+    rows.map((r) => ({ id: r.id, label: r.label })),
+    bets,
+  );
+  return (
+    <div className="stack tight">
+      <h3>Odds over time</h3>
+      {history ? (
+        <OddsHistoryChart series={history} />
+      ) : (
+        <p className="hint">Once a couple more bets come in, you'll see how the odds moved.</p>
+      )}
+    </div>
+  );
+}
 
 export default function OptionsPanel({
   market,
   rows,
+  bets,
   now,
   onChanged,
 }: {
   market: Market;
   rows: OptionRow[];
+  bets: Bet[];
   now: Date;
   onChanged: () => void;
 }) {
@@ -39,30 +59,22 @@ export default function OptionsPanel({
           {market.kind === 'open' ? 'No options yet - add the first one.' : 'No options yet.'}
         </p>
       ) : (
-        <ul className="list">
-          {rows.map((r) => (
-            <li key={r.id} className="option">
-              <div className="spread">
-                <strong>{r.label}</strong>
-                <span className="row">
-                  {market.winning_option_id === r.id && <Pill tone="good">Winner</Pill>}
-                  {r.pct !== null && (
-                    <span className="muted">
-                      <Percent value={r.pct} />
-                    </span>
-                  )}
-                </span>
-              </div>
-              <div className="bar" role="presentation">
-                <span style={{ width: `${r.pct ?? 0}%` }} />
-              </div>
-              <p className="muted small">
+        <OddsBars
+          winningOptionId={market.winning_option_id}
+          rows={rows.map((r) => ({
+            id: r.id,
+            label: r.label,
+            pct: r.pct,
+            meta: (
+              <>
                 <Money value={r.pool} /> from {plural(r.betCount, 'bet')}
-              </p>
-            </li>
-          ))}
-        </ul>
+              </>
+            ),
+          }))}
+        />
       )}
+
+      {rows.length > 0 && <OddsOverTime rows={rows} bets={bets} />}
 
       {canAdd && (
         <>
